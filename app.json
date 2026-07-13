@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "My Watch",
+    "slug": "my-watch",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "mywatch",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0E0E1A"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mywatch.app"
+    },
+    "android": {
+      "package": "com.mywatch.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0E0E1A"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#7C5CFC"
+        }
+      ]
+    ],
+    "experiments": {
+      "tsconfigPaths": true
+    }
+  }
+}

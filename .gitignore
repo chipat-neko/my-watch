@@ -1,0 +1,22 @@
+# Dépendances
+node_modules/
+
+# Fichiers Expo / build
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Secrets : ne jamais commiter le .env réel
+.env
+.env.local
+
+# Tests
+coverage/
+
+# Notes de travail internes (plans d'investigation de l'agent)
+.claude/
+
+# Divers
+*.log
+.DS_Store

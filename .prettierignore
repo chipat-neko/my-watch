@@ -1,0 +1,8 @@
+node_modules/
+.expo/
+dist/
+web-build/
+coverage/
+package-lock.json
+# Notes de travail internes (plans d'investigation), pas du code livrable.
+.claude/
