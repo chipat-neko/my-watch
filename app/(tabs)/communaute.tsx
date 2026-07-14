@@ -25,8 +25,8 @@ export default function EcranCommunaute() {
         </View>
         <Text style={styles.titre}>Bientôt disponible</Text>
         <Text style={styles.sous}>
-          Le fil d'actu de tes amis, les « j'aime » et les recommandations sociales arrivent dans une
-          prochaine version.
+          Le fil d'actu de tes amis, les « j'aime » et les recommandations sociales arrivent dans
+          une prochaine version.
         </Text>
       </View>
     </SafeAreaView>

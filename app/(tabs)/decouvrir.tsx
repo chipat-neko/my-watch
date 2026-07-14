@@ -94,7 +94,11 @@ export default function EcranDecouvrir() {
           accessibilityLabel="Rechercher un film ou une série"
         />
         {texte ? (
-          <Pressable onPress={() => setTexte('')} accessibilityRole="button" accessibilityLabel="Effacer">
+          <Pressable
+            onPress={() => setTexte('')}
+            accessibilityRole="button"
+            accessibilityLabel="Effacer"
+          >
             <Ionicons name="close-circle" size={18} color={couleurs.texteDoux} />
           </Pressable>
         ) : null}
@@ -186,7 +190,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: couleurs.bordure2,
   },
-  chipTexte: { color: couleurs.texteDoux, fontSize: polices.normale, fontFamily: familles.semibold },
+  chipTexte: {
+    color: couleurs.texteDoux,
+    fontSize: polices.normale,
+    fontFamily: familles.semibold,
+  },
   section: {
     color: couleurs.texte,
     fontSize: polices.titre,

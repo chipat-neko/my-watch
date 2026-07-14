@@ -87,7 +87,9 @@ export default function EcranAccueil() {
         <View style={styles.vide}>
           <Ionicons name="tv-outline" size={52} color={accent} />
           <Text style={styles.videTitre}>Ta liste est vide</Text>
-          <Text style={styles.videSous}>Ajoute des séries et des films depuis l’onglet Découvrir.</Text>
+          <Text style={styles.videSous}>
+            Ajoute des séries et des films depuis l’onglet Découvrir.
+          </Text>
           <Pressable
             style={[styles.videBtn, { backgroundColor: accent }]}
             onPress={() => router.push('/decouvrir')}
@@ -114,7 +116,9 @@ export default function EcranAccueil() {
             accessibilityLabel={`Prochain épisode : ${hero.serieTitre}`}
           >
             <Image
-              source={urlFond(hero.cheminAffiche) ? { uri: urlFond(hero.cheminAffiche)! } : undefined}
+              source={
+                urlFond(hero.cheminAffiche) ? { uri: urlFond(hero.cheminAffiche)! } : undefined
+              }
               style={styles.heroFond}
             />
             <View style={styles.heroVoile} />
@@ -138,7 +142,9 @@ export default function EcranAccueil() {
           <View style={styles.section}>
             <View style={styles.sectionEnTete}>
               <Text style={styles.titreRang}>Reprendre</Text>
-              <Text style={[styles.sectionCompteur, { color: accent }]}>{enCours.length} en cours</Text>
+              <Text style={[styles.sectionCompteur, { color: accent }]}>
+                {enCours.length} en cours
+              </Text>
             </View>
             {enCours.map((e) => (
               <Pressable
@@ -149,7 +155,10 @@ export default function EcranAccueil() {
                 accessibilityLabel={e.titre}
               >
                 {urlAffiche(e.cheminAffiche, 'w185') ? (
-                  <Image source={{ uri: urlAffiche(e.cheminAffiche, 'w185')! }} style={styles.ligneAffiche} />
+                  <Image
+                    source={{ uri: urlAffiche(e.cheminAffiche, 'w185')! }}
+                    style={styles.ligneAffiche}
+                  />
                 ) : (
                   <View style={styles.ligneAffiche} />
                 )}
@@ -223,7 +232,12 @@ const styles = StyleSheet.create({
   heroPastilleTexte: { fontSize: 10, fontFamily: familles.extrabold, letterSpacing: 0.5 },
   heroBas: { padding: espacements.m },
   heroTitre: { color: couleurs.texte, fontSize: 22, fontFamily: familles.extrabold },
-  heroMeta: { color: couleurs.texteCorps, fontSize: polices.normale, fontFamily: familles.semibold, marginTop: 2 },
+  heroMeta: {
+    color: couleurs.texteCorps,
+    fontSize: polices.normale,
+    fontFamily: familles.semibold,
+    marginTop: 2,
+  },
   // Sections
   section: { marginTop: espacements.xl },
   sectionEnTete: {
@@ -255,14 +269,29 @@ const styles = StyleSheet.create({
     borderColor: couleurs.bordure,
     borderRadius: rayons.m,
   },
-  ligneAffiche: { width: 46, height: 66, borderRadius: rayons.s, backgroundColor: couleurs.surface2 },
+  ligneAffiche: {
+    width: 46,
+    height: 66,
+    borderRadius: rayons.s,
+    backgroundColor: couleurs.surface2,
+  },
   ligneInfos: { flex: 1 },
   ligneTitre: { color: couleurs.texte, fontSize: polices.moyenne, fontFamily: familles.bold },
-  ligneSous: { color: couleurs.texteDoux, fontSize: polices.petite, fontFamily: familles.medium, marginTop: 2 },
+  ligneSous: {
+    color: couleurs.texteDoux,
+    fontSize: polices.petite,
+    fontFamily: familles.medium,
+    marginTop: 2,
+  },
   rail: { paddingHorizontal: espacements.l, gap: espacements.m },
   // État vide
   vide: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: espacements.xl },
-  videTitre: { color: couleurs.texte, fontSize: polices.titre, fontFamily: familles.bold, marginTop: espacements.m },
+  videTitre: {
+    color: couleurs.texte,
+    fontSize: polices.titre,
+    fontFamily: familles.bold,
+    marginTop: espacements.m,
+  },
   videSous: {
     color: couleurs.texteDoux,
     fontSize: polices.normale,
@@ -272,6 +301,10 @@ const styles = StyleSheet.create({
     marginBottom: espacements.l,
     maxWidth: 300,
   },
-  videBtn: { paddingHorizontal: espacements.xl, paddingVertical: espacements.m, borderRadius: rayons.rond },
+  videBtn: {
+    paddingHorizontal: espacements.xl,
+    paddingVertical: espacements.m,
+    borderRadius: rayons.rond,
+  },
   videBtnTexte: { fontSize: polices.moyenne, fontFamily: familles.bold },
 });
