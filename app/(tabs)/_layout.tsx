@@ -1,26 +1,30 @@
 // =============================================================================
 //  Layout des onglets (barre de navigation du bas)
 //  ---------------------------------------------------------------------------
-//  Définit les cinq onglets principaux de l'app et leurs icônes.
-//  Chaque onglet correspond à un fichier du dossier app/(tabs)/.
+//  Cinq onglets (handoff « TV Time ») : Accueil, Découvrir, À venir,
+//  Communauté, Profil. La couleur de l'onglet actif suit la variante choisie
+//  par l'utilisateur (turquoise / bleu / rose).
 // =============================================================================
 
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { couleurs } from '@/theme/theme';
+import { useVariante } from '@/hooks/useVariante';
+import { couleurs, familles } from '@/theme/theme';
 
 export default function LayoutOnglets() {
+  const { accent } = useVariante();
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        // Couleurs de la barre d'onglets.
-        tabBarActiveTintColor: couleurs.accent,
-        tabBarInactiveTintColor: couleurs.texteDoux,
+        tabBarActiveTintColor: accent,
+        tabBarInactiveTintColor: couleurs.ongletInactif,
         tabBarStyle: {
           backgroundColor: couleurs.surface,
           borderTopColor: couleurs.bordure,
         },
+        tabBarLabelStyle: { fontFamily: familles.semibold, fontSize: 11 },
       }}
     >
       <Tabs.Screen
@@ -31,10 +35,10 @@ export default function LayoutOnglets() {
         }}
       />
       <Tabs.Screen
-        name="recherche"
+        name="decouvrir"
         options={{
-          title: 'Recherche',
-          tabBarIcon: ({ color, size }) => <Ionicons name="search" color={color} size={size} />,
+          title: 'Découvrir',
+          tabBarIcon: ({ color, size }) => <Ionicons name="compass" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
@@ -45,10 +49,10 @@ export default function LayoutOnglets() {
         }}
       />
       <Tabs.Screen
-        name="maliste"
+        name="communaute"
         options={{
-          title: 'Ma liste',
-          tabBarIcon: ({ color, size }) => <Ionicons name="bookmark" color={color} size={size} />,
+          title: 'Communauté',
+          tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
