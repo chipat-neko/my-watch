@@ -19,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import { lireFichierTexte } from '@/lib/fichier';
 import { analyserCsv, importer, ResultatImport } from '@/services/import';
 import { LigneImport } from '@/types';
 import { couleurs, espacements, polices, rayons } from '@/theme/theme';
@@ -44,7 +44,7 @@ export default function EcranImport() {
       if (choix.canceled || !choix.assets?.[0]) return;
 
       const fichier = choix.assets[0];
-      const contenu = await FileSystem.readAsStringAsync(fichier.uri);
+      const contenu = await lireFichierTexte(fichier.uri);
       const analyse = analyserCsv(contenu);
 
       setNomFichier(fichier.name);

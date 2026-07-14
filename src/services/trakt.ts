@@ -13,7 +13,7 @@
 //  l'id TMDb par épisode), notes d'épisodes, et envoi My Watch -> Trakt.
 // =============================================================================
 
-import * as SecureStore from 'expo-secure-store';
+import { getItem, setItem, supprimerItem } from '@/lib/stockageSecurise';
 import { detailsTitre } from '@/lib/tmdb';
 import { ajouterTitre, entreePour, noter } from '@/services/bibliotheque';
 import { avecReessais, enParallele } from '@/services/async';
@@ -48,12 +48,12 @@ export function traktConfigure(): boolean {
 }
 
 async function chargerJeton(): Promise<JetonTrakt | null> {
-  const brut = await SecureStore.getItemAsync(CLE_JETON);
+  const brut = await getItem(CLE_JETON);
   return brut ? (JSON.parse(brut) as JetonTrakt) : null;
 }
 
 async function sauverJeton(jeton: JetonTrakt): Promise<void> {
-  await SecureStore.setItemAsync(CLE_JETON, JSON.stringify(jeton));
+  await setItem(CLE_JETON, JSON.stringify(jeton));
 }
 
 /** Indique si un compte Trakt est actuellement connecté. */
@@ -63,7 +63,7 @@ export async function estConnecteTrakt(): Promise<boolean> {
 
 /** Déconnecte le compte Trakt (efface les jetons locaux). */
 export async function deconnecterTrakt(): Promise<void> {
-  await SecureStore.deleteItemAsync(CLE_JETON);
+  await supprimerItem(CLE_JETON);
 }
 
 // --- Device flow -------------------------------------------------------------
