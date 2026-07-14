@@ -14,7 +14,7 @@
     "deploy:web": "expo export -p web && firebase deploy --only hosting"
   },
   "dependencies": {
-    "@expo/vector-icons": "^14.0.0",
+    "@expo/vector-icons": "14.0.4",
     "@react-native-async-storage/async-storage": "1.23.1",
     "expo": "~51.0.0",
     "expo-constants": "~16.0.0",
