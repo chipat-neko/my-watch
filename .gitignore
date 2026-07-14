@@ -5,6 +5,10 @@ node_modules/
 .expo/
 dist/
 web-build/
+.firebase/
+
+# Références de design (handoff) — maquettes lourdes, hors code app
+Prototype application style TV Time/
 
 # Secrets : ne jamais commiter le .env réel
 .env

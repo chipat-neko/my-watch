@@ -15,7 +15,16 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  useFonts,
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+  Manrope_800ExtraBold,
+} from '@expo-google-fonts/manrope';
 import { FournisseurAuth, useAuth } from '@/hooks/useAuth';
+import { FournisseurVariante } from '@/hooks/useVariante';
 import { couleurs } from '@/theme/theme';
 
 /**
@@ -62,14 +71,28 @@ function Garde() {
   );
 }
 
-/** Layout exporté : fournit le contexte d'auth et les zones sûres (encoches). */
+/** Layout exporté : charge les polices, fournit variante + auth + zones sûres. */
 export default function LayoutRacine() {
+  const [policesChargees] = useFonts({
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Manrope_800ExtraBold,
+  });
+
   return (
     <SafeAreaProvider>
-      <FournisseurAuth>
-        <StatusBar style="light" />
-        <Garde />
-      </FournisseurAuth>
+      <FournisseurVariante>
+        <FournisseurAuth>
+          <StatusBar style="light" />
+          {policesChargees ? (
+            <Garde />
+          ) : (
+            <View style={{ flex: 1, backgroundColor: couleurs.fond }} />
+          )}
+        </FournisseurAuth>
+      </FournisseurVariante>
     </SafeAreaProvider>
   );
 }

@@ -6,3 +6,6 @@ coverage/
 package-lock.json
 # Notes de travail internes (plans d'investigation), pas du code livrable.
 .claude/
+.firebase/
+# Références de design (handoff), pas du code du projet.
+Prototype application style TV Time/

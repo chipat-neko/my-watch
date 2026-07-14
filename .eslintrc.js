@@ -3,5 +3,13 @@
 module.exports = {
   root: true,
   extends: ['expo', 'prettier'],
-  ignorePatterns: ['node_modules/', '.expo/', 'dist/', 'web-build/', 'coverage/'],
+  ignorePatterns: [
+    'node_modules/',
+    '.expo/',
+    '.firebase/',
+    'dist/',
+    'web-build/',
+    'coverage/',
+    'Prototype application style TV Time/',
+  ],
 };

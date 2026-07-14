@@ -19,10 +19,12 @@ import {
   desactiverNotifications,
   notificationsActivees,
 } from '@/services/notifications';
+import { useVariante, ACCENTS, LIBELLES_VARIANTE, Variante } from '@/hooks/useVariante';
 import { couleurs, espacements, polices, rayons } from '@/theme/theme';
 
 export default function EcranProfil() {
   const { utilisateur, seDeconnecter } = useAuth();
+  const { variante, definirVariante } = useVariante();
   const router = useRouter();
   const [stats, setStats] = useState<Statistiques | null>(null);
   const [notifs, setNotifs] = useState(false);
@@ -86,6 +88,32 @@ export default function EcranProfil() {
           <Stat valeur={stats?.nbSeries ?? 0} libelle="Séries" />
           <Stat valeur={stats?.nbFilms ?? 0} libelle="Films" />
           <Stat valeur={stats?.nbEpisodesVus ?? 0} libelle="Épisodes vus" />
+        </View>
+
+        {/* Apparence : direction visuelle (classic / grid / social) */}
+        <Text style={styles.sectionLabel}>Apparence</Text>
+        <View style={styles.variantes}>
+          {(['classic', 'grid', 'social'] as Variante[]).map((v) => {
+            const actif = variante === v;
+            return (
+              <Pressable
+                key={v}
+                onPress={() => definirVariante(v)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: actif }}
+                accessibilityLabel={`Apparence ${LIBELLES_VARIANTE[v]}`}
+                style={[
+                  styles.varianteBtn,
+                  { borderColor: actif ? ACCENTS[v].accent : couleurs.bordure },
+                ]}
+              >
+                <View style={[styles.varPastille, { backgroundColor: ACCENTS[v].accent }]} />
+                <Text style={[styles.varTexte, actif && { color: couleurs.texte }]}>
+                  {LIBELLES_VARIANTE[v]}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         {/* Réglage : notifications des sorties */}
@@ -212,4 +240,26 @@ const styles = StyleSheet.create({
   actionTitre: { color: couleurs.texte, fontSize: polices.moyenne, fontWeight: '600' },
   actionSousTitre: { color: couleurs.texteDoux, fontSize: polices.petite, marginTop: 2 },
   deconnexion: { justifyContent: 'center' },
+  sectionLabel: {
+    color: couleurs.texteDoux,
+    fontSize: polices.petite,
+    fontWeight: '700',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: espacements.s,
+  },
+  variantes: { flexDirection: 'row', gap: espacements.s, marginBottom: espacements.l },
+  varianteBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: espacements.s,
+    paddingVertical: espacements.m,
+    borderRadius: rayons.m,
+    borderWidth: 1.5,
+    backgroundColor: couleurs.surface,
+  },
+  varPastille: { width: 12, height: 12, borderRadius: 999 },
+  varTexte: { color: couleurs.texteDoux, fontSize: polices.normale, fontWeight: '600' },
 });
