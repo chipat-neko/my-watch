@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "lint": "eslint .",
-    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
+    "deploy:web": "expo export -p web && firebase deploy --only hosting"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.0",
