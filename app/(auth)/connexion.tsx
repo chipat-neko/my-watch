@@ -46,8 +46,8 @@ export default function EcranConnexion() {
           );
           setModeInscription(false);
         }
-        // Si une session a été ouverte (confirmation désactivée côté Supabase),
-        // la <Garde> du layout racine redirige automatiquement vers les onglets.
+        // Avec Firebase, l'inscription ouvre la session immédiatement : la
+        // <Garde> du layout racine redirige automatiquement vers les onglets.
       } else {
         await seConnecter(email.trim(), motDePasse);
       }

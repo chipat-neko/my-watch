@@ -4,7 +4,7 @@
 //  Ce fichier centralise toutes les structures de données manipulées dans
 //  l'app : les titres (films/séries) renvoyés par TMDb, les épisodes, et les
 //  entrées de la bibliothèque personnelle de l'utilisateur (stockées dans
-//  Supabase). Tout est commenté en français pour faciliter la maintenance.
+//  Firestore). Tout est commenté en français pour faciliter la maintenance.
 // =============================================================================
 
 /** Type d'un média : soit un film, soit une série télévisée. */
@@ -72,12 +72,12 @@ export interface Episode {
 
 /**
  * Une entrée de la bibliothèque personnelle de l'utilisateur.
- * Persistée dans la table Supabase "bibliotheque".
+ * Persistée dans Firestore : users/{uid}/bibliotheque.
  */
 export interface EntreeBibliotheque {
-  /** Identifiant unique de la ligne (UUID Supabase). */
+  /** Identifiant du document Firestore (déterministe : `${type}_${tmdbId}`). */
   id: string;
-  /** Identifiant de l'utilisateur propriétaire (auth Supabase). */
+  /** Identifiant de l'utilisateur propriétaire (auth Firebase). */
   utilisateurId: string;
   /** Identifiant TMDb du titre suivi. */
   tmdbId: number;

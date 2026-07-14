@@ -2,7 +2,7 @@
 //  Composant : Chargement
 //  ---------------------------------------------------------------------------
 //  Petit indicateur de chargement centré, réutilisé pendant les appels réseau
-//  (TMDb, Supabase). Optionnellement accompagné d'un message.
+//  (TMDb, Firebase). Optionnellement accompagné d'un message.
 // =============================================================================
 
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';

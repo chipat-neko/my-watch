@@ -21,7 +21,7 @@ service ferme le **15 juillet 2026**). Le code est **entièrement original** et
 - 🔔 **Notifications** : rappel local le jour de diffusion d'un nouvel épisode.
 - 📥 **Import CSV** : récupère ton historique depuis un export **Netflix** ou **TV Time**.
 - 🔗 **Synchro Trakt.tv** : import automatique de l'historique et des notes via l'API officielle (optionnel).
-- ☁️ **Synchro cloud** : compte utilisateur + synchronisation multi-appareils (Supabase).
+- ☁️ **Synchro cloud** : compte utilisateur + synchronisation multi-appareils (Firebase).
 - 📊 **Statistiques** : nombre de séries, films et épisodes vus.
 
 > ℹ️ **À propos de la « connexion Netflix » :** il n'existe **aucune API officielle**
@@ -41,7 +41,7 @@ service ferme le **15 juillet 2026**). Le code est **entièrement original** et
 | Langage              | **TypeScript**                     |
 | Navigation           | **Expo Router** (routage fichiers) |
 | Données films/séries | **TMDb** (The Movie Database)      |
-| Back-end / compte    | **Supabase** (Postgres + Auth)     |
+| Back-end / compte    | **Firebase** (Firestore + Auth)    |
 | Notifications        | **expo-notifications** (locales)   |
 | Synchro externe      | **Trakt.tv** (API, optionnel)      |
 | Tests / qualité      | **Jest** · ESLint · Prettier       |
@@ -67,13 +67,12 @@ npm install
 1. Crée un compte sur https://www.themoviedb.org
 2. Va dans **Paramètres → API** et récupère le **jeton d'accès v4** (Bearer token).
 
-### 4. Créer un projet Supabase (gratuit)
+### 4. Créer un projet Firebase (gratuit)
 
-1. Crée un projet sur https://supabase.com
-2. Dans **SQL Editor**, colle et exécute le contenu de [`supabase/schema.sql`](./supabase/schema.sql).
-   Cela crée les tables, la sécurité (RLS) et le trigger de date de visionnage.
-   _Base déjà existante ?_ Exécute plutôt les scripts de [`supabase/migrations/`](./supabase/migrations/).
-3. Dans **Project Settings → API**, récupère l'**URL du projet** et la **clé `anon` publique**.
+1. Crée un projet sur https://console.firebase.google.com
+2. Ajoute une application **Web** (icône `</>`) : la configuration affichée te donne les clés.
+3. Active **Authentication** (méthode _E-mail/mot de passe_) et **Firestore Database**.
+4. Dans **Firestore Database → Rules**, colle le contenu de [`firestore.rules`](./firestore.rules) et publie.
 
 ### 5. Configurer les variables d'environnement
 
@@ -81,12 +80,16 @@ npm install
 cp .env.example .env
 ```
 
-Puis ouvre `.env` et remplis les 3 valeurs obligatoires :
+Puis ouvre `.env` et remplis les valeurs obligatoires (TMDb + les 6 clés Firebase) :
 
 ```
 EXPO_PUBLIC_TMDB_ACCESS_TOKEN=...
-EXPO_PUBLIC_SUPABASE_URL=...
-EXPO_PUBLIC_SUPABASE_ANON_KEY=...
+EXPO_PUBLIC_FIREBASE_API_KEY=...
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=...
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+EXPO_PUBLIC_FIREBASE_APP_ID=...
 ```
 
 Les deux valeurs **Trakt.tv** sont **optionnelles** (voir « Synchro Trakt » ci-dessous).
@@ -133,7 +136,7 @@ my_watch/
 ├── src/
 │   ├── components/           # Composants réutilisables (CartePoster, Etoiles…)
 │   ├── hooks/                # useAuth (contexte d'authentification)
-│   ├── lib/                  # Clients : supabase.ts, tmdb.ts
+│   ├── lib/                  # Clients : firebase.ts, tmdb.ts
 │   ├── services/             # Logique métier (+ tests *.test.ts) :
 │   │   ├── bibliotheque.ts   #   biblio, épisodes vus, notes
 │   │   ├── csv.ts            #   parsing d'import CSV (testé)
@@ -145,9 +148,7 @@ my_watch/
 │   │   └── async.ts          #   utilitaires (ré-essais, concurrence)
 │   ├── theme/                # Couleurs, espacements, constantes
 │   └── types/                # Types TypeScript partagés
-├── supabase/
-│   ├── schema.sql            # Schéma complet (base neuve)
-│   └── migrations/           # Scripts d'évolution (base existante)
+├── firestore.rules           # Règles de sécurité Firestore
 ├── app.json                  # Configuration Expo
 ├── jest.config.js            # Configuration des tests
 └── .env.example              # Modèle de variables d'environnement

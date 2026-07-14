@@ -1,30 +1,37 @@
 // =============================================================================
-//  Contexte d'authentification
+//  Contexte d'authentification (Firebase)
 //  ---------------------------------------------------------------------------
 //  Expose l'état de connexion à toute l'application via un "Context" React.
 //  Grâce au hook `useAuth()`, n'importe quel écran peut :
-//    - savoir si un utilisateur est connecté (session)
+//    - savoir si un utilisateur est connecté (utilisateur)
 //    - se connecter, s'inscrire, se déconnecter
 //
-//  Le fournisseur écoute en continu les changements d'état côté Supabase
-//  (connexion, déconnexion, rafraîchissement du jeton) et met l'UI à jour.
+//  Le fournisseur écoute en continu l'état d'authentification Firebase et met
+//  l'UI à jour (connexion, déconnexion, restauration de session au démarrage).
 // =============================================================================
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import {
+  User,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 
 /** Valeurs et actions exposées par le contexte d'authentification. */
 interface ContexteAuth {
-  /** Session Supabase courante (null si déconnecté). */
-  session: Session | null;
+  /** Utilisateur Firebase courant (null si déconnecté). */
+  utilisateur: User | null;
   /** Vrai tant que l'on vérifie la session au démarrage. */
   chargement: boolean;
   /** Connecte un utilisateur existant. */
   seConnecter: (email: string, motDePasse: string) => Promise<void>;
   /**
-   * Crée un nouveau compte. Renvoie `confirmationRequise: true` lorsque
-   * Supabase n'a pas ouvert de session (une validation par e-mail est attendue).
+   * Crée un nouveau compte. Avec Firebase, l'utilisateur est connecté
+   * immédiatement (aucune confirmation par e-mail requise) : `confirmationRequise`
+   * vaut donc toujours false. Le champ est conservé pour compatibilité d'API.
    */
   sInscrire: (email: string, motDePasse: string) => Promise<{ confirmationRequise: boolean }>;
   /** Déconnecte l'utilisateur courant. */
@@ -38,46 +45,37 @@ const AuthContext = createContext<ContexteAuth | undefined>(undefined);
  * Il englobe tous les écrans pour leur donner accès à l'authentification.
  */
 export function FournisseurAuth({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [utilisateur, setUtilisateur] = useState<User | null>(null);
   const [chargement, setChargement] = useState(true);
 
   useEffect(() => {
-    // 1. Au démarrage, on récupère la session déjà enregistrée (si elle existe).
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    // Écoute l'état de connexion ; le premier déclenchement (session restaurée
+    // ou non) signale la fin de la vérification initiale.
+    const desabonner = onAuthStateChanged(auth, (u) => {
+      setUtilisateur(u);
       setChargement(false);
     });
-
-    // 2. On s'abonne aux changements (connexion / déconnexion / refresh).
-    const { data: sub } = supabase.auth.onAuthStateChange((_evenement, nouvelleSession) => {
-      setSession(nouvelleSession);
-    });
-
-    // 3. On se désabonne proprement lorsque le composant est démonté.
-    return () => sub.subscription.unsubscribe();
+    return desabonner;
   }, []);
 
   async function seConnecter(email: string, motDePasse: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password: motDePasse });
-    if (error) throw error;
+    await signInWithEmailAndPassword(auth, email, motDePasse);
   }
 
   async function sInscrire(email: string, motDePasse: string) {
-    const { data, error } = await supabase.auth.signUp({ email, password: motDePasse });
-    if (error) throw error;
-    // Si la confirmation e-mail est activée côté Supabase (comportement par
-    // défaut), aucune session n'est ouverte : l'utilisateur doit d'abord
-    // valider son adresse. On remonte l'info pour que l'écran l'en informe.
-    return { confirmationRequise: data.session === null };
+    await createUserWithEmailAndPassword(auth, email, motDePasse);
+    // Firebase ouvre la session immédiatement : la <Garde> redirige aussitôt.
+    return { confirmationRequise: false };
   }
 
   async function seDeconnecter() {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    await signOut(auth);
   }
 
   return (
-    <AuthContext.Provider value={{ session, chargement, seConnecter, sInscrire, seDeconnecter }}>
+    <AuthContext.Provider
+      value={{ utilisateur, chargement, seConnecter, sInscrire, seDeconnecter }}
+    >
       {children}
     </AuthContext.Provider>
   );

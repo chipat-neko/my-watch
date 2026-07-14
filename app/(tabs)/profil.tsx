@@ -22,7 +22,7 @@ import {
 import { couleurs, espacements, polices, rayons } from '@/theme/theme';
 
 export default function EcranProfil() {
-  const { session, seDeconnecter } = useAuth();
+  const { utilisateur, seDeconnecter } = useAuth();
   const router = useRouter();
   const [stats, setStats] = useState<Statistiques | null>(null);
   const [notifs, setNotifs] = useState(false);
@@ -78,7 +78,7 @@ export default function EcranProfil() {
           <View style={styles.avatar}>
             <Ionicons name="person" size={28} color={couleurs.texte} />
           </View>
-          <Text style={styles.email}>{session?.user.email ?? 'Utilisateur'}</Text>
+          <Text style={styles.email}>{utilisateur?.email ?? 'Utilisateur'}</Text>
         </View>
 
         {/* Statistiques */}

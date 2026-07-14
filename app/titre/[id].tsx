@@ -279,7 +279,7 @@ function BlocEpisodes({
     rafraichir();
   }, [rafraichir]);
 
-  /** Coche/décoche un épisode et met à jour Supabase. */
+  /** Coche/décoche un épisode et met à jour Firestore. */
   async function basculer(ep: Episode) {
     const dejaVu = vus.has(ep.id);
     // Mise à jour optimiste de l'UI (immédiate), puis appel réseau.

@@ -2,7 +2,7 @@
 //  Analyse CSV (fonctions pures)
 //  ---------------------------------------------------------------------------
 //  Toute la logique de parsing d'un export CSV (Netflix / TV Time) vit ici,
-//  SANS aucune dépendance à React Native, au réseau ou à Supabase. Ces fonctions
+//  SANS aucune dépendance à React Native, au réseau ou à Firebase. Ces fonctions
 //  sont donc pures et faciles à tester unitairement (voir csv.test.ts).
 //
 //  La résolution des titres via TMDb et l'écriture en base restent, elles, dans

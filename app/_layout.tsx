@@ -23,23 +23,23 @@ import { couleurs } from '@/theme/theme';
  * Il doit être rendu SOUS <FournisseurAuth> pour accéder à `useAuth`.
  */
 function Garde() {
-  const { session, chargement } = useAuth();
+  const { utilisateur, chargement } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    if (chargement) return; // On attend de connaître l'état de session.
+    if (chargement) return; // On attend de connaître l'état de connexion.
 
     const dansGroupeAuth = segments[0] === '(auth)';
 
-    if (!session && !dansGroupeAuth) {
+    if (!utilisateur && !dansGroupeAuth) {
       // Pas connecté et hors de l'écran de connexion -> on y renvoie.
       router.replace('/(auth)/connexion');
-    } else if (session && dansGroupeAuth) {
+    } else if (utilisateur && dansGroupeAuth) {
       // Connecté mais encore sur la connexion -> on va aux onglets.
       router.replace('/(tabs)');
     }
-  }, [session, chargement, segments, router]);
+  }, [utilisateur, chargement, segments, router]);
 
   // Pendant la vérification initiale de la session, on affiche un loader.
   if (chargement) {
