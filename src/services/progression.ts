@@ -93,6 +93,7 @@ export async function avanceesDesSeries(
         infos.set(e.tmdbId, {
           nombreEpisodes: details.nombreEpisodes,
           saisons: details.saisons,
+          cheminFond: details.cheminFond,
         });
       }
     } catch {

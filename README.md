@@ -13,16 +13,30 @@ service ferme le **15 juillet 2026**). Le code est **entièrement original** et
 
 ## ✨ Fonctionnalités
 
-- 🔎 **Découverte & recherche** : tendances, séries/films populaires, recherche par titre (via TMDb), défilement infini.
-- 📚 **Ma liste** : suivi des titres avec statut _À voir / En cours / Terminé_.
-- ✅ **Suivi des épisodes** : coche les épisodes vus, saison par saison.
+- ▶️ **Prochain épisode à regarder** : l'accueil dit exactement où tu en es (« À REGARDER · S2 E5 ») et te laisse le marquer vu d'un seul appui, sans ouvrir la série.
+- 🔎 **Découverte & recherche** : tendances, séries/films populaires, recherche par titre (via TMDb).
+- 📚 **Ma liste** : toute ta bibliothèque, filtrable par statut (_À voir / En cours / Terminé / Abandonné_), avec recherche locale et tri.
+- ✅ **Suivi des épisodes** : coche les épisodes un par un, ou **marque une saison entière** vue (appui long sur un épisode : tout marquer jusqu'à lui).
+- 📈 **Progression** : barre d'avancement par série (épisodes vus / total diffusé).
 - ⭐ **Notes** : note personnelle (5 étoiles) par titre **et** par épisode.
-- 🗓️ **À venir** : prochains épisodes de tes séries suivies, triés par date.
+- 🗓️ **À venir** : prochains épisodes de tes séries suivies, groupés par jour.
 - 🔔 **Notifications** : rappel local le jour de diffusion d'un nouvel épisode.
 - 📥 **Import CSV** : récupère ton historique depuis un export **Netflix** ou **TV Time**.
 - 🔗 **Synchro Trakt.tv** : import automatique de l'historique et des notes via l'API officielle (optionnel).
 - ☁️ **Synchro cloud** : compte utilisateur + synchronisation multi-appareils (Firebase).
-- 📊 **Statistiques** : nombre de séries, films et épisodes vus.
+- 📊 **Statistiques** : séries, films, épisodes vus, titres terminés et **temps passé à regarder**.
+- 🎨 **Trois apparences** : turquoise (classic), bleu (grid), rose (social).
+- 🖥️ **Web, iOS et Android** : navigation adaptative (barre latérale au-delà de 1024 px, onglets en bas sur mobile).
+
+> ℹ️ **Le temps de visionnage est une estimation.** TMDb ne fournit pas la durée
+> réelle de chaque épisode vu, seulement une durée type par série. Le total est
+> donc calculé à partir de cette moyenne — l'app l'affiche explicitement comme
+> une estimation plutôt que de laisser croire à une mesure exacte.
+
+> ℹ️ **Pas d'onglet Communauté.** Le fil social suppose un back-end de relations
+> et de publications que My Watch n'a pas. Plutôt que d'occuper un cinquième de
+> la navigation avec un écran « bientôt disponible », la place revient à
+> **Ma liste**. La communauté reviendra quand elle aura quelque chose à montrer.
 
 > ℹ️ **À propos de la « connexion Netflix » :** il n'existe **aucune API officielle**
 > permettant de connecter un compte Netflix (ou Disney+, Prime…) pour récupérer

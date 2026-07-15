@@ -308,7 +308,10 @@ function Stat({
 }) {
   const t = typo(densite);
   return (
-    <View style={styles.stat}>
+    // La grille 2×2 du handoff est pensée pour un téléphone : sur un écran large
+    // elle donne des cartes de 740px pour afficher un seul chiffre. Sur desktop,
+    // les quatre statistiques tiennent sur une ligne.
+    <View style={[styles.stat, densite === 'desktop' && styles.statLarge]}>
       <View style={[styles.statIcone, { backgroundColor: `${couleur}1F` }]}>
         <Ionicons name={icone} size={16} color={couleur} />
       </View>
@@ -398,8 +401,9 @@ const styles = StyleSheet.create({
     borderColor: couleurs.bordure,
     borderTopColor: couleurs.lisere,
     borderRadius: rayons.l,
-    padding: espacements.ml,
+    padding: espacements.m,
   },
+  statLarge: { flexBasis: '22%' },
   statIcone: {
     width: 32,
     height: 32,

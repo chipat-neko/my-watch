@@ -19,12 +19,19 @@ export interface AvanceeSerie {
   saisons: SommaireSaison[];
   /** Positions vues, en clés « saison:numero ». */
   vusCles: Set<string>;
+  /**
+   * Image de fond 16:9 de la série. La bibliothèque ne stocke que l'affiche
+   * (2:3) ; or le hero a besoin d'un backdrop. L'appel TMDb étant déjà fait
+   * pour l'avancement, le récupérer ici ne coûte rien.
+   */
+  cheminFond: string | null;
 }
 
 /** Ce que l'on sait d'une série côté TMDb, pour le calcul d'avancement. */
 export interface InfosSerie {
   nombreEpisodes: number;
   saisons: SommaireSaison[];
+  cheminFond: string | null;
 }
 
 /**
@@ -55,6 +62,7 @@ export function fusionnerAvancees(
       prochain: prochainAVoir(info.saisons, vusCles),
       saisons: info.saisons,
       vusCles,
+      cheminFond: info.cheminFond,
     });
   }
 

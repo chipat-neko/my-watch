@@ -58,6 +58,25 @@ import {
   typo,
 } from '@/theme/theme';
 
+/**
+ * Ce que le hero met en avant : soit un épisode à reprendre (on peut le
+ * regarder maintenant), soit un épisode à venir (on l'attend).
+ */
+interface VedetteHero {
+  genre: 'reprendre' | 'a_venir';
+  serieId: number;
+  serieTitre: string;
+  cheminAffiche: string | null;
+  cheminFond: string | null;
+  saison: number;
+  numero: number;
+  nom: string;
+  /** Renseigné pour « a_venir ». */
+  dateDiffusion?: string;
+  /** Renseigné pour « reprendre ». */
+  avancee?: AvanceeSerie;
+}
+
 /** Convertit une entrée de bibliothèque en Titre minimal (pour les cartes). */
 function versTitre(e: EntreeBibliotheque): Titre {
   return {
@@ -168,7 +187,46 @@ export default function EcranAccueil() {
     .sort((a, b) => (b.vuLe ?? b.ajouteLe).localeCompare(a.vuLe ?? a.ajouteLe));
 
   const titreEcran = variante === 'social' ? 'Fil d’actu' : 'À suivre';
-  const hero = prochains[0] ?? null;
+
+  /**
+   * Le hero met en avant, par ordre de priorité :
+   *  1. l'épisode à REPRENDRE — ce qu'on peut regarder tout de suite ;
+   *  2. à défaut, le prochain épisode à DIFFUSER — ce qu'on attend.
+   *
+   * L'inverse serait absurde : une série terminée n'a aucun épisode à venir, si
+   * bien qu'une bibliothèque entièrement rattrapée n'avait pas de hero du tout
+   * et laissait un écran presque nu. Et surtout, « regarde ça maintenant » est
+   * plus utile que « ça sort dans trois semaines ».
+   */
+  const aReprendre = enCours
+    .map((e) => ({ entree: e, avancee: avancees.get(e.tmdbId) }))
+    .find((x) => x.avancee?.prochain);
+
+  const hero: VedetteHero | null = aReprendre?.avancee?.prochain
+    ? {
+        genre: 'reprendre',
+        serieId: aReprendre.entree.tmdbId,
+        serieTitre: aReprendre.entree.titre,
+        cheminAffiche: aReprendre.entree.cheminAffiche,
+        cheminFond: aReprendre.avancee.cheminFond,
+        saison: aReprendre.avancee.prochain.saison,
+        numero: aReprendre.avancee.prochain.numero,
+        nom: '',
+        avancee: aReprendre.avancee,
+      }
+    : prochains[0]
+      ? {
+          genre: 'a_venir',
+          serieId: prochains[0].serieId,
+          serieTitre: prochains[0].serieTitre,
+          cheminAffiche: prochains[0].cheminAffiche,
+          cheminFond: prochains[0].cheminFond,
+          saison: prochains[0].saison,
+          numero: prochains[0].numero,
+          nom: prochains[0].nom,
+          dateDiffusion: prochains[0].dateDiffusion,
+        }
+      : null;
 
   // Hauteur du hero : 420-560 sur desktop (en deçà de 420 c'est une bannière
   // publicitaire, au-delà de 560 le contenu suivant disparaît sous la ligne de
@@ -178,6 +236,9 @@ export default function EcranAccueil() {
     : Math.round(largeurUtile * 0.62);
 
   const largeurRailPoster = d === 'desktop' ? 168 : 116;
+  // Au-delà de ~1100px utiles, une ligne unique devient une bande vide : on
+  // passe à deux colonnes.
+  const colonnesReprendre = largeurUtile >= 1100 ? 2 : 1;
 
   // --- Premier chargement : squelettes aux dimensions réelles ----------------
   if (premierChargement) {
@@ -259,7 +320,7 @@ export default function EcranAccueil() {
 
         {hero ? (
           <Hero
-            episode={hero}
+            vedette={hero}
             hauteur={hauteurHero}
             grandEcran={grandEcran}
             padding={padding}
@@ -280,27 +341,33 @@ export default function EcranAccueil() {
               padding={padding}
               densite={d}
             >
-              {enCours.map((e, i) => (
-                <Animated.View
-                  key={e.id}
-                  entering={
-                    staggerArme.current
-                      ? FadeInDown.duration(280).delay(Math.min(i, 8) * 40)
-                      : undefined
-                  }
-                >
-                  <LigneReprendre
-                    entree={e}
-                    avancee={avancees.get(e.tmdbId)}
-                    accent={accent}
-                    encre={encre}
-                    densite={d}
-                    padding={padding}
-                    onPress={() => ouvrir(e.tmdbId, e.type)}
-                    onMarquerVu={(position) => marquerProchainVu(e, position)}
-                  />
-                </Animated.View>
-              ))}
+              {/* Grille sur grand écran : une LISTE de lignes étirée sur 1400px
+                  pour un poster de 52px et deux lignes de texte, c'est une barre
+                  de progression d'un mètre de long. Deux colonnes donnent des
+                  lignes à une largeur lisible et remplissent l'écran. */}
+              <View style={[styles.grilleReprendre, { paddingHorizontal: padding }]}>
+                {enCours.map((e, i) => (
+                  <Animated.View
+                    key={e.id}
+                    style={colonnesReprendre === 2 ? styles.demiColonne : undefined}
+                    entering={
+                      staggerArme.current
+                        ? FadeInDown.duration(280).delay(Math.min(i, 8) * 40)
+                        : undefined
+                    }
+                  >
+                    <LigneReprendre
+                      entree={e}
+                      avancee={avancees.get(e.tmdbId)}
+                      accent={accent}
+                      encre={encre}
+                      densite={d}
+                      onPress={() => ouvrir(e.tmdbId, e.type)}
+                      onMarquerVu={(position) => marquerProchainVu(e, position)}
+                    />
+                  </Animated.View>
+                ))}
+              </View>
             </Section>
           ) : null}
 
@@ -337,7 +404,7 @@ export default function EcranAccueil() {
 // --- Hero ------------------------------------------------------------------
 
 function Hero({
-  episode,
+  vedette,
   hauteur,
   grandEcran,
   padding,
@@ -346,7 +413,7 @@ function Hero({
   densite,
   onPress,
 }: {
-  episode: ProchainEpisode;
+  vedette: VedetteHero;
   hauteur: number;
   grandEcran: boolean;
   padding: number;
@@ -356,18 +423,22 @@ function Hero({
   onPress: () => void;
 }) {
   const t = typo(densite);
-  const fond = urlFond(episode.cheminFond, 'w1280') ?? urlAffiche(episode.cheminAffiche, 'w500');
-  const date = new Date(`${episode.dateDiffusion}T00:00:00`).toLocaleDateString('fr-FR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
+  const fond = urlFond(vedette.cheminFond, 'w1280') ?? urlAffiche(vedette.cheminAffiche, 'w500');
+  const reprendre = vedette.genre === 'reprendre';
+
+  const date = vedette.dateDiffusion
+    ? new Date(`${vedette.dateDiffusion}T00:00:00`).toLocaleDateString('fr-FR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      })
+    : null;
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Prochain épisode : ${episode.serieTitre}, saison ${episode.saison} épisode ${episode.numero}`}
+      accessibilityLabel={`${reprendre ? 'Reprendre' : 'Prochain épisode'} : ${vedette.serieTitre}, saison ${vedette.saison} épisode ${vedette.numero}`}
       style={[
         styles.hero,
         {
@@ -411,21 +482,36 @@ function Hero({
       <View style={[styles.heroBas, { padding: grandEcran ? padding : espacements.ml }]}>
         {/* L'overline en capitales espacées sous un grand titre : le détail le
             moins cher de la composition éditoriale. */}
-        <Text style={[t.overline, { color: accent }]}>PROCHAIN ÉPISODE · {date.toUpperCase()}</Text>
+        <Text style={[t.overline, { color: accent }]}>
+          {reprendre ? 'À REPRENDRE' : `PROCHAIN ÉPISODE · ${date?.toUpperCase() ?? ''}`}
+        </Text>
         <Text
           style={[densite === 'desktop' ? t.display : t.h1, styles.heroTitre]}
           numberOfLines={2}
         >
-          {episode.serieTitre}
+          {vedette.serieTitre}
         </Text>
         <Text style={[t.bodyStrong, { color: couleurs.texteCorps }]} numberOfLines={1}>
-          S{episode.saison} E{episode.numero}
-          {episode.nom ? ` · ${episode.nom}` : ''}
+          S{vedette.saison} E{vedette.numero}
+          {vedette.nom ? ` · ${vedette.nom}` : ''}
         </Text>
 
-        <View style={[styles.heroBtn, { backgroundColor: accent }]}>
-          <Ionicons name="play" size={15} color={encre} />
-          <Text style={[t.label, { color: encre }]}>Voir la série</Text>
+        {vedette.avancee ? (
+          <View style={styles.heroProgression}>
+            <Progression
+              vus={vedette.avancee.vus}
+              total={vedette.avancee.total}
+              accent={accent}
+              libelle
+            />
+          </View>
+        ) : null}
+
+        <View style={[styles.heroBtn, { backgroundColor: accent, shadowColor: accent }]}>
+          <Ionicons name={reprendre ? 'play' : 'calendar-outline'} size={15} color={encre} />
+          <Text style={[t.label, { color: encre }]}>
+            {reprendre ? 'Reprendre la série' : 'Voir la série'}
+          </Text>
         </View>
       </View>
     </Pressable>
@@ -454,7 +540,13 @@ function Section({
     <View style={{ marginTop: densite === 'desktop' ? espacements.section : espacements.xl }}>
       <View style={[styles.sectionEnTete, { paddingHorizontal: padding }]}>
         <Text style={[t.h2, { color: couleurs.texte }]}>{titre}</Text>
-        {compteur ? <Text style={[t.caption, { color: accent }]}>{compteur}</Text> : null}
+        {/* Le compteur est collé au titre, et non renvoyé à l'autre bout de
+            l'écran : à 1400px de distance, plus rien ne les relie. */}
+        {compteur ? (
+          <View style={[styles.compteur, { borderColor: `${accent}59` }]}>
+            <Text style={[t.caption, { color: accent }]}>{compteur}</Text>
+          </View>
+        ) : null}
       </View>
       {children}
     </View>
@@ -519,7 +611,6 @@ function LigneReprendre({
   accent,
   encre,
   densite,
-  padding,
   onPress,
   onMarquerVu,
 }: {
@@ -528,7 +619,6 @@ function LigneReprendre({
   accent: string;
   encre: string;
   densite: 'mobile' | 'desktop';
-  padding: number;
   onPress: () => void;
   onMarquerVu: (position: PositionEpisode) => Promise<void>;
 }) {
@@ -551,7 +641,6 @@ function LigneReprendre({
     <Pressable
       style={({ hovered }: EtatPressable) => [
         styles.ligne,
-        { marginHorizontal: padding },
         hovered && { backgroundColor: couleurs.surface3, borderColor: couleurs.bordure2 },
       ]}
       onPress={onPress}
@@ -690,6 +779,7 @@ const styles = StyleSheet.create({
   },
   heroBas: { maxWidth: 620 },
   heroTitre: { color: couleurs.texte, marginTop: espacements.xs },
+  heroProgression: { maxWidth: 260, marginTop: espacements.sm },
   heroBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -705,10 +795,23 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
   },
+  compteur: {
+    borderWidth: 1,
+    borderRadius: rayons.rond,
+    paddingHorizontal: espacements.s,
+    paddingVertical: 3,
+  },
+  grilleReprendre: { flexDirection: 'row', flexWrap: 'wrap', gap: espacements.sm },
+  /**
+   * `maxWidth` est indispensable : avec `flexGrow` seul, une série unique
+   * s'étirerait sur toute la largeur — c'est-à-dire une barre de progression de
+   * 1400 px pour une affiche de 52 px.
+   */
+  demiColonne: { flexBasis: '48%', flexGrow: 1, maxWidth: '49%' },
   sectionEnTete: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: espacements.sm,
     // Serré : le titre et son contenu forment UN groupe. C'est le rapport entre
     // cet espace (16) et celui qui sépare deux sections (56) qui crée la
     // structure — à distances égales, tout flotte et rien n'est groupé.
@@ -729,10 +832,12 @@ const styles = StyleSheet.create({
     borderRadius: rayons.l,
   },
   ligneAffiche: {
-    width: 52,
-    height: 78,
+    width: 60,
+    height: 90,
     borderRadius: rayons.s,
     backgroundColor: couleurs.surface2,
+    borderWidth: 1,
+    borderColor: couleurs.lisere,
   },
   ligneInfos: { flex: 1 },
   btnVu: {

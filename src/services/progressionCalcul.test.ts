@@ -15,6 +15,7 @@ const pos = (...couples: [number, number][]): PositionEpisode[] =>
 const infos = (nombreEpisodes: number, ...saisons: [number, number][]): InfosSerie => ({
   nombreEpisodes,
   saisons: saisons.map(([numero, nbEpisodes]) => ({ numero, nbEpisodes })),
+  cheminFond: '/fond.jpg',
 });
 
 describe('fusionnerAvancees', () => {
