@@ -19,6 +19,7 @@ import {
   signOut,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { viderCache } from '@/services/cache';
 
 /** Valeurs et actions exposées par le contexte d'authentification. */
 interface ContexteAuth {
@@ -70,6 +71,9 @@ export function FournisseurAuth({ children }: { children: ReactNode }) {
 
   async function seDeconnecter() {
     await signOut(auth);
+    // Le cache porte les données du compte qui part : sans cette purge, la
+    // personne suivante verrait sa bibliothèque le temps d'un affichage.
+    await viderCache();
   }
 
   return (

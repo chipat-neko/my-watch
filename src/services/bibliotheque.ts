@@ -30,6 +30,7 @@ import {
   getCountFromServer,
 } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { DUREES, enCache, invalider } from '@/services/cache';
 import { EntreeBibliotheque, EpisodeVu, StatutSuivi, Titre, SourceEntree } from '@/types';
 
 /** Identifiant de l'utilisateur connecté (lève une erreur si déconnecté). */
@@ -45,6 +46,26 @@ const refEpisodes = (uid: string) => collection(db, 'users', uid, 'episodes_vus'
 const idEntree = (type: string, tmdbId: number) => `${type}_${tmdbId}`;
 
 const maintenant = () => new Date().toISOString();
+
+/**
+ * Clés de cache. Elles portent l'uid : sans cela, se connecter avec un autre
+ * compte afficherait la bibliothèque du précédent.
+ */
+const cleBiblio = (uid: string) => `biblio:${uid}`;
+const cleEpisodes = (uid: string) => `episodes:${uid}`;
+
+/**
+ * Oublie les données du compte courant.
+ *
+ * Appelée après CHAQUE écriture : un cache que l'on ne purge pas est pire que
+ * pas de cache du tout — il montre un état qui n'existe plus.
+ */
+function invaliderMesDonnees(): void {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  invalider(cleBiblio(uid));
+  invalider(cleEpisodes(uid));
+}
 
 // --- Conversion : document Firestore -> objet app ----------------------------
 function versEntree(id: string, d: any): EntreeBibliotheque {
@@ -63,11 +84,21 @@ function versEntree(id: string, d: any): EntreeBibliotheque {
   };
 }
 
-/** Récupère toute la bibliothèque de l'utilisateur connecté (plus récent d'abord). */
+/**
+ * Récupère toute la bibliothèque de l'utilisateur connecté (plus récent d'abord).
+ *
+ * MISE EN CACHE 30 secondes, en mémoire. L'Accueil la lisait DEUX fois par
+ * affichage (une pour lui, une pour l'agenda), puis Ma liste et le Profil la
+ * relisaient chacun : une navigation entre trois écrans coûtait quatre lectures
+ * complètes de la collection. Trente secondes couvrent la navigation sans jamais
+ * masquer une modification — et toute écriture invalide le cache de toute façon.
+ */
 export async function chargerBibliotheque(): Promise<EntreeBibliotheque[]> {
   const uid = idUtilisateur();
-  const snap = await getDocs(query(refBiblio(uid), orderBy('ajouteLe', 'desc')));
-  return snap.docs.map((d) => versEntree(d.id, d.data()));
+  return enCache(cleBiblio(uid), DUREES.bibliotheque, async () => {
+    const snap = await getDocs(query(refBiblio(uid), orderBy('ajouteLe', 'desc')));
+    return snap.docs.map((d) => versEntree(d.id, d.data()));
+  });
 }
 
 /**
@@ -114,6 +145,7 @@ export async function ajouterTitre(
     // Date de visionnage : fournie, ou posée si on ajoute déjà en "terminé".
     vuLe: vuLe ?? (statut === 'termine' ? maintenant() : null),
   });
+  invaliderMesDonnees();
 }
 
 /** Change le statut de suivi d'une entrée existante. */
@@ -127,18 +159,21 @@ export async function changerStatut(entreeId: string, statut: StatutSuivi): Prom
     if (snap.exists() && !snap.data().vuLe) patch.vuLe = maintenant();
   }
   await updateDoc(ref, patch);
+  invaliderMesDonnees();
 }
 
 /** Attribue une note personnelle (sur 10) à une entrée. */
 export async function noter(entreeId: string, note: number | null): Promise<void> {
   const uid = idUtilisateur();
   await updateDoc(doc(refBiblio(uid), entreeId), { notePerso: note });
+  invaliderMesDonnees();
 }
 
 /** Retire un titre de la bibliothèque. */
 export async function retirerTitre(entreeId: string): Promise<void> {
   const uid = idUtilisateur();
   await deleteDoc(doc(refBiblio(uid), entreeId));
+  invaliderMesDonnees();
 }
 
 // -----------------------------------------------------------------------------
@@ -164,13 +199,21 @@ function versEpisodeVu(id: string, d: any): EpisodeVu {
  * L'Accueil calcule la progression ET le prochain épisode à regarder de
  * plusieurs séries à la fois : une requête `where('serieId','==',…)` par série
  * y coûterait N allers-retours pour une collection qui tient en mémoire.
+ *
+ * MISE EN CACHE 30 secondes : c'est la lecture la plus lourde de l'application
+ * (un document par épisode vu, soit des centaines après un import), et l'Accueil,
+ * Ma liste et le Profil la demandent chacun.
  */
 export async function episodesVusParSerie(): Promise<Map<number, EpisodeVu[]>> {
   const uid = idUtilisateur();
-  const snap = await getDocs(refEpisodes(uid));
+  // `Map` ne survit pas à JSON : on met en cache un tableau, converti à la volée.
+  const plats = await enCache(cleEpisodes(uid), DUREES.bibliotheque, async () => {
+    const snap = await getDocs(refEpisodes(uid));
+    return snap.docs.map((d) => versEpisodeVu(d.id, d.data()));
+  });
+
   const parSerie = new Map<number, EpisodeVu[]>();
-  for (const d of snap.docs) {
-    const vu = versEpisodeVu(d.id, d.data());
+  for (const vu of plats) {
     const liste = parSerie.get(vu.serieId);
     if (liste) liste.push(vu);
     else parSerie.set(vu.serieId, [vu]);
@@ -217,6 +260,7 @@ export async function marquerEpisodeVu(
     note: null,
     vuLe: maintenant(),
   });
+  invaliderMesDonnees();
 }
 
 /**
@@ -246,12 +290,14 @@ export async function noterEpisode(
       vuLe: maintenant(),
     });
   }
+  invaliderMesDonnees();
 }
 
 /** Annule le marquage "vu" d'un épisode. */
 export async function demarquerEpisode(episodeId: number): Promise<void> {
   const uid = idUtilisateur();
   await deleteDoc(doc(refEpisodes(uid), String(episodeId)));
+  invaliderMesDonnees();
 }
 
 /** Statistiques simples affichées sur l'écran Profil. */

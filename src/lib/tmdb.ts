@@ -11,6 +11,7 @@
 // =============================================================================
 
 import { Titre, Episode, TypeMedia } from '@/types';
+import { DUREES, enCache } from '@/services/cache';
 
 const BASE = 'https://api.themoviedb.org/3';
 const JETON = process.env.EXPO_PUBLIC_TMDB_ACCESS_TOKEN ?? '';
@@ -144,11 +145,26 @@ export async function mieuxNotes(type: TypeMedia, page = 1): Promise<Titre[]> {
   return data.results.map((r) => versTitre(r, type));
 }
 
-/** Détails complets d'un titre (film ou série). */
+/**
+ * Détails complets d'un titre (film ou série).
+ *
+ * MIS EN CACHE 24 h, sur disque. C'est l'appel le plus coûteux de
+ * l'application : l'avancement en demande UN PAR SÉRIE SUIVIE, à chaque
+ * ouverture de l'Accueil, de Ma liste et du Profil. Avec cinquante séries,
+ * c'était cent cinquante appels réseau pour une simple navigation — et ces
+ * données ne changent pas dans la journée.
+ */
 export async function detailsTitre(id: number, type: TypeMedia): Promise<Titre> {
-  const chemin = type === 'film' ? `/movie/${id}` : `/tv/${id}`;
-  const brut = await appelTmdb<any>(chemin);
-  return versTitre(brut, type);
+  return enCache(
+    `tmdb:details:${type}:${id}`,
+    DUREES.detailsTmdb,
+    async () => {
+      const chemin = type === 'film' ? `/movie/${id}` : `/tv/${id}`;
+      const brut = await appelTmdb<any>(chemin);
+      return versTitre(brut, type);
+    },
+    true
+  );
 }
 
 /**
