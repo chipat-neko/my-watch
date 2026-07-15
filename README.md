@@ -25,7 +25,9 @@ service ferme le **15 juillet 2026**). Le code est **entièrement original** et
 - 🔗 **Synchro Trakt.tv** : import automatique de l'historique et des notes via l'API officielle (optionnel).
 - ☁️ **Synchro cloud** : compte utilisateur + synchronisation multi-appareils (Firebase).
 - 📊 **Statistiques** : séries, films, épisodes vus, titres terminés et **temps passé à regarder**.
-- 🎨 **Trois apparences** : turquoise (classic), bleu (grid), rose (social).
+- 👥 **Communauté** : ajoute des amis par leur pseudo, vois ce qu'ils regardent dans un fil, commente les épisodes.
+- 🔗 **Partage** : envoie le lien d'une série (feuille de partage native, presse-papier sur ordinateur).
+- 🎨 **Trois apparences** : elles changent la STRUCTURE de l'accueil, pas seulement la couleur — éditoriale (classic), mosaïque dense (grid), fil vertical (social).
 - 🖥️ **Web, iOS et Android** : navigation adaptative (barre latérale au-delà de 1024 px, onglets en bas sur mobile).
 
 > ℹ️ **Le temps de visionnage est une estimation.** TMDb ne fournit pas la durée
@@ -33,10 +35,14 @@ service ferme le **15 juillet 2026**). Le code est **entièrement original** et
 > donc calculé à partir de cette moyenne — l'app l'affiche explicitement comme
 > une estimation plutôt que de laisser croire à une mesure exacte.
 
-> ℹ️ **Pas d'onglet Communauté.** Le fil social suppose un back-end de relations
-> et de publications que My Watch n'a pas. Plutôt que d'occuper un cinquième de
-> la navigation avec un écran « bientôt disponible », la place revient à
-> **Ma liste**. La communauté reviendra quand elle aura quelque chose à montrer.
+> ℹ️ **Vie privée du volet social.** Le profil public ne contient **que** ton
+> pseudo — ton adresse e-mail ne quitte jamais Firebase Auth. Ta bibliothèque
+> reste privée : seules les actions publiées (épisode vu, note, série terminée)
+> partent dans le fil, et uniquement vers tes amis confirmés. Les commentaires
+> d'épisode, eux, sont publics entre utilisateurs — comme chez TV Time.
+>
+> Un nouvel ami ne voit pas les activités publiées **avant** l'amitié : le fil
+> raconte ce qui se passe depuis que vous vous suivez, il n'ouvre pas d'archive.
 
 > ℹ️ **À propos de la « connexion Netflix » :** il n'existe **aucune API officielle**
 > permettant de connecter un compte Netflix (ou Disney+, Prime…) pour récupérer
