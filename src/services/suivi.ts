@@ -10,6 +10,7 @@
 import { episodesSaison } from '@/lib/tmdb';
 import { marquerEpisodeVu } from '@/services/bibliotheque';
 import { PositionEpisode } from '@/services/prochainAVoir';
+import { publierActivite } from '@/services/social';
 
 /**
  * Marque vu un épisode désigné par sa POSITION (saison + numéro).
@@ -22,11 +23,27 @@ import { PositionEpisode } from '@/services/prochainAVoir';
  */
 export async function marquerPositionVue(
   serieId: number,
-  position: PositionEpisode
+  position: PositionEpisode,
+  /** Pour publier l'activité dans le fil des amis. Omis = pas de publication. */
+  serie?: { titre: string; cheminAffiche: string | null }
 ): Promise<boolean> {
   const episodes = await episodesSaison(serieId, position.saison);
   const episode = episodes.find((e) => e.numero === position.numero);
   if (!episode) return false;
   await marquerEpisodeVu(serieId, episode.id, position.saison, position.numero);
+
+  // Après l'écriture, et sans l'attendre : le fil est un bonus. S'il échoue,
+  // l'épisode reste vu — bloquer le suivi pour un défaut de publication serait
+  // absurde.
+  if (serie) {
+    publierActivite({
+      type: 'episode',
+      tmdbId: serieId,
+      serieTitre: serie.titre,
+      cheminAffiche: serie.cheminAffiche,
+      saison: position.saison,
+      numero: position.numero,
+    });
+  }
   return true;
 }

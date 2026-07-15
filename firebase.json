@@ -1,4 +1,8 @@
 {
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
   "hosting": {
     "public": "dist",
     "_comment_ignore": "NE PAS remettre '**/node_modules/**' : Expo publie les polices Manrope et les icones sous dist/assets/node_modules/@expo-google-fonts/... et dist/assets/node_modules/@expo/vector-icons/... Les exclure les empeche d'etre deployees ; le rewrite SPA renvoie alors index.html a leur place, useFonts echoue, et l'application s'arrete sur un ecran VIDE (page blanche en production).",

@@ -165,7 +165,10 @@ export default function EcranAccueil() {
     setAvancees(optimiste);
 
     try {
-      const ok = await marquerPositionVue(entree.tmdbId, position);
+      const ok = await marquerPositionVue(entree.tmdbId, position, {
+        titre: entree.titre,
+        cheminAffiche: entree.cheminAffiche,
+      });
       if (!ok) throw new Error('Épisode introuvable sur TMDb');
     } catch {
       setAvancees(avant);
@@ -360,7 +363,23 @@ export default function EcranAccueil() {
           hauteur={hauteurHero + 200}
         />
 
-        <Text style={[t.h1, styles.enTete, { paddingHorizontal: padding }]}>{titreEcran}</Text>
+        <View style={[styles.enTeteLigne, { paddingHorizontal: padding }]}>
+          <Text style={[t.h1, styles.enTete]}>{titreEcran}</Text>
+          {/* Le calendrier n'est plus un onglet (la barre plafonne à cinq) : il
+              vit ici, à côté du hero qui annonce déjà le prochain épisode. */}
+          <Pressable
+            onPress={() => router.push('/calendrier')}
+            accessibilityRole="button"
+            accessibilityLabel="Voir le calendrier des prochains épisodes"
+            style={({ hovered }: EtatPressable) => [
+              styles.btnCalendrier,
+              hovered && { backgroundColor: couleurs.surface3, borderColor: accent },
+            ]}
+          >
+            <Ionicons name="calendar-outline" size={16} color={accent} />
+            <Text style={[t.label, { color: couleurs.texteDoux }]}>À venir</Text>
+          </Pressable>
+        </View>
 
         {hero ? (
           <Hero
@@ -815,7 +834,28 @@ const styles = StyleSheet.create({
   contenu: { paddingBottom: espacements.section },
   // Seul le contenu structuré est borné : le hero et les rails, eux, sont full-bleed.
   bornes: { width: '100%', maxWidth: maxLargeur, alignSelf: 'center' },
-  enTete: { color: couleurs.texte, paddingTop: espacements.sm, marginBottom: espacements.l },
+  enTeteLigne: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: espacements.m,
+    paddingTop: espacements.sm,
+    marginBottom: espacements.l,
+  },
+  enTete: { color: couleurs.texte },
+  btnCalendrier: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.s,
+    height: 38,
+    paddingHorizontal: espacements.m,
+    borderRadius: rayons.rond,
+    backgroundColor: couleurs.surface2,
+    borderWidth: 1,
+    borderColor: couleurs.bordure2,
+    borderTopColor: couleurs.lisere,
+    cursor: 'pointer',
+  },
   hero: {
     overflow: 'hidden',
     backgroundColor: couleurs.surface,

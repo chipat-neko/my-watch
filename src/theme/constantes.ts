@@ -12,6 +12,18 @@
  */
 export const IMG_BASE = 'https://image.tmdb.org/t/p/';
 
+/**
+ * Adresse publique de l'application web. Sert à construire les liens partagés :
+ * un lien doit s'ouvrir chez la personne qui le reçoit, donc pointer vers le
+ * web — elle n'a pas forcément l'application installée.
+ */
+export const URL_PUBLIQUE = 'https://device-streaming-5450fe88.web.app';
+
+/** Lien partageable vers la fiche d'un titre. */
+export function lienPartage(id: number, type: string): string {
+  return `${URL_PUBLIQUE}/titre/${id}?type=${type}`;
+}
+
 /** Construit l'URL complète d'une affiche à partir du chemin TMDb. */
 export function urlAffiche(
   chemin: string | null,

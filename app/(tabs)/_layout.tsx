@@ -1,13 +1,13 @@
 // =============================================================================
 //  Layout des onglets (navigation adaptative)
 //  ---------------------------------------------------------------------------
-//  Cinq destinations : Accueil, Découvrir, À venir, Ma liste, Profil.
+//  Cinq destinations : Accueil, Découvrir, Ma liste, Communauté, Profil.
 //
-//  Écart assumé au handoff : « Ma liste » (la bibliothèque) prend la place de
-//  « Communauté ». Le volet social demande un back-end que My Watch n'a pas, et
-//  garder 20 % de la navigation sur un écran « bientôt disponible » alors que la
-//  bibliothèque n'existait nulle part était indéfendable. La communauté
-//  reviendra quand elle aura quelque chose à montrer.
+//  Pourquoi « À venir » n'est plus un onglet : la barre plafonne à cinq (au-delà,
+//  les libellés deviennent illisibles sur un téléphone), et le calendrier faisait
+//  doublon avec le hero de l'Accueil, qui annonce déjà le prochain épisode. Il
+//  reste à un appui, depuis l'Accueil. La Communauté, elle, a désormais un vrai
+//  back-end : elle méritait sa place.
 //
 //  Navigation ADAPTATIVE (règle Material Adaptive / handoff web) :
 //    - petit écran (< 1024px) -> barre d'onglets en bas (mobile)
@@ -126,17 +126,17 @@ export default function LayoutOnglets() {
         }}
       />
       <Tabs.Screen
-        name="calendrier"
-        options={{
-          title: 'À venir',
-          tabBarIcon: ({ color, size }) => <Ionicons name="calendar" color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
         name="bibliotheque"
         options={{
           title: 'Ma liste',
           tabBarIcon: ({ color, size }) => <Ionicons name="library" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="communaute"
+        options={{
+          title: 'Communauté',
+          tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color} size={size} />,
         }}
       />
       <Tabs.Screen

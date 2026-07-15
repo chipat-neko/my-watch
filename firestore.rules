@@ -3,16 +3,122 @@ rules_version = '2';
 // =============================================================================
 //  Règles de sécurité Firestore — My Watch
 //  ---------------------------------------------------------------------------
-//  Équivalent de la sécurité au niveau ligne (RLS) : chaque utilisateur ne peut
-//  lire et écrire QUE dans son propre sous-arbre users/{uid}/…
-//  (bibliotheque, episodes_vus). À coller dans la console Firebase :
-//  Firestore Database → Rules → Publish.
+//  Ces règles sont la SEULE barrière entre les données de chacun : le client est
+//  public, tout ce qu'il envoie est falsifiable. Rien ici ne doit reposer sur ce
+//  que l'application « est censée » faire.
+//
+//  À publier avec `firebase deploy --only firestore:rules`.
 // =============================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // --- Fonctions utilitaires ---------------------------------------------
+    function connecte() {
+      return request.auth != null;
+    }
+    function estMoi(uid) {
+      return connecte() && request.auth.uid == uid;
+    }
+    function texteValide(champ, maxi) {
+      return champ is string && champ.size() > 0 && champ.size() <= maxi;
+    }
+
+    // --- Données privées ----------------------------------------------------
+    // Bibliothèque et épisodes vus : strictement personnels.
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if estMoi(userId);
+    }
+
+    // --- Profils publics ----------------------------------------------------
+    // Lisibles par tout utilisateur connecté : c'est ce qui permet de retrouver
+    // quelqu'un par son pseudo. Ne contiennent QUE le pseudo — jamais l'e-mail,
+    // qui reste dans Firebase Auth.
+    match /profils/{userId} {
+      allow read: if connecte();
+      allow create, update: if estMoi(userId)
+        && texteValide(request.resource.data.pseudo, 20)
+        && request.resource.data.pseudo.size() >= 3
+        // `pseudoMin` sert à la recherche insensible à la casse : il doit être
+        // cohérent avec `pseudo`, sinon on pourrait s'afficher sous un nom et
+        // être trouvé sous un autre.
+        && request.resource.data.pseudoMin == request.resource.data.pseudo.lower();
+      allow delete: if estMoi(userId);
+    }
+
+    // --- Amitiés ------------------------------------------------------------
+    // Un document par paire, identifié par les deux uid triés : l'unicité de
+    // l'identifiant empêche à elle seule les demandes en double.
+    match /amities/{paireId} {
+      // `get` doit tolérer un document ABSENT : avant d'envoyer une demande, le
+      // client lit la paire pour savoir si un lien existe déjà. Sur un document
+      // inexistant, `resource` vaut null et `resource.data.membres` fait échouer
+      // l'évaluation — la lecture est refusée, et la création qui suit aussi.
+      // Autoriser ce cas ne révèle rien : il n'y a rien à lire.
+      allow get: if connecte() && (resource == null || request.auth.uid in resource.data.membres);
+      // `list` est évalué document par document : la requête ne peut donc
+      // rapporter que les paires dont on est membre.
+      allow list: if connecte() && request.auth.uid in resource.data.membres;
+
+      // Créer = envoyer une demande. On ne peut demander QUE pour soi, et la
+      // demande naît toujours « en attente » : personne ne s'auto-accepte ami.
+      allow create: if connecte()
+        && request.resource.data.demandeur == request.auth.uid
+        && request.auth.uid in request.resource.data.membres
+        && request.resource.data.membres.size() == 2
+        && request.resource.data.statut == 'attente';
+
+      // Accepter : réservé au DESTINATAIRE. Le demandeur ne peut pas valider sa
+      // propre demande, et les membres ne changent jamais.
+      allow update: if connecte()
+        && request.auth.uid in resource.data.membres
+        && request.auth.uid != resource.data.demandeur
+        && resource.data.statut == 'attente'
+        && request.resource.data.statut == 'acceptee'
+        && request.resource.data.membres == resource.data.membres
+        && request.resource.data.demandeur == resource.data.demandeur;
+
+      // Refuser, annuler ou retirer : chacun des deux peut rompre le lien.
+      allow delete: if connecte() && request.auth.uid in resource.data.membres;
+    }
+
+    // --- Fil d'activité -----------------------------------------------------
+    // Chaque activité porte la liste de ceux qui peuvent la voir (`visiblePar`),
+    // écrite à la publication. Firestore ne sait pas faire de jointure : sans
+    // cette liste, il faudrait lire les amitiés pour filtrer, ce qu'une règle ne
+    // peut pas faire à l'échelle.
+    //
+    // Un client falsifié pourrait s'ajouter des destinataires — il ne diffuserait
+    // alors que SES propres activités, à des gens qui ne les ont pas demandées.
+    // C'est du bruit, pas une fuite : aucune donnée d'autrui n'est exposée.
+    match /activites/{activiteId} {
+      allow read: if connecte() && request.auth.uid in resource.data.visiblePar;
+      allow create: if connecte()
+        && request.resource.data.auteur == request.auth.uid
+        && request.resource.data.visiblePar is list;
+      // Une activité ne se modifie pas : elle décrit un fait passé.
+      allow update: if false;
+      allow delete: if connecte() && resource.data.auteur == request.auth.uid;
+    }
+
+    // --- Commentaires d'épisode ---------------------------------------------
+    // Publics entre utilisateurs connectés, comme chez TV Time : discuter d'un
+    // épisode n'a aucun intérêt si seuls les amis peuvent lire.
+    match /commentaires/{commentaireId} {
+      allow read: if connecte();
+      allow create: if connecte()
+        && request.resource.data.auteur == request.auth.uid
+        && texteValide(request.resource.data.texte, 500)
+        && request.resource.data.serieId is number
+        && request.resource.data.episodeId is number;
+      allow update: if connecte()
+        && resource.data.auteur == request.auth.uid
+        && texteValide(request.resource.data.texte, 500)
+        // On ne réécrit pas l'histoire : un commentaire modifié reste attaché au
+        // même épisode et au même auteur.
+        && request.resource.data.auteur == resource.data.auteur
+        && request.resource.data.episodeId == resource.data.episodeId;
+      allow delete: if connecte() && resource.data.auteur == request.auth.uid;
     }
   }
 }

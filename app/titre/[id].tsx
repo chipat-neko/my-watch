@@ -41,11 +41,15 @@ import {
   demarquerEpisode,
   noterEpisode,
 } from '@/services/bibliotheque';
+import { partagerLien, ResultatPartage } from '@/lib/partage';
 import { enParallele } from '@/services/async';
 import { cle, saisonsTerminees } from '@/services/prochainAVoir';
+import { publierActivite } from '@/services/social';
+import { useAuth } from '@/hooks/useAuth';
 import { CartePoster } from '@/components/CartePoster';
 import { Casting } from '@/components/Casting';
 import { CocheVu } from '@/components/CocheVu';
+import { Commentaires } from '@/components/Commentaires';
 import { Etoiles } from '@/components/Etoiles';
 import { Progression } from '@/components/Progression';
 import { LignesSquelettes, Squelette } from '@/components/Squelette';
@@ -59,7 +63,7 @@ import {
   TypeMedia,
   EntreeBibliotheque,
 } from '@/types';
-import { urlAffiche, urlFond, urlStill, nomsGenres } from '@/theme/constantes';
+import { lienPartage, urlAffiche, urlFond, urlStill, nomsGenres } from '@/theme/constantes';
 import {
   conteneurs,
   couleurs,
@@ -88,6 +92,7 @@ export default function EcranDetail() {
   const id = Number(params.id);
   const type: TypeMedia = params.type === 'film' ? 'film' : 'serie';
   const router = useRouter();
+  const { utilisateur } = useAuth();
   const { accent, encre } = useVariante();
   const { width: fenetre } = useWindowDimensions();
 
@@ -101,6 +106,7 @@ export default function EcranDetail() {
   const [acteurs, setActeurs] = useState<Acteur[]>([]);
   const [trailer, setTrailer] = useState<string | null>(null);
   const [aussi, setAussi] = useState<Titre[]>([]);
+  const [etatPartage, setEtatPartage] = useState<ResultatPartage | null>(null);
   const [chargement, setChargement] = useState(true);
 
   // Chargement initial : détails + plateformes + entrée éventuelle en biblio.
@@ -146,6 +152,15 @@ export default function EcranDetail() {
     Linking.openURL(`https://www.youtube.com/watch?v=${trailer}`).catch(() => {});
   }
 
+  /** Partage le lien web de la fiche. */
+  async function partager() {
+    const r = await partagerLien(nomAffiche, lienPartage(id, type));
+    setEtatPartage(r);
+    // Le retour disparaît de lui-même : un bouton figé sur « Lien copié »
+    // laisserait croire que l'action ne peut plus être refaite.
+    if (r !== 'annule') setTimeout(() => setEtatPartage(null), 2500);
+  }
+
   /**
    * Applique un statut : ajoute le titre s'il n'est pas suivi, sinon met à
    * jour son statut. Puis rafraîchit l'entrée locale.
@@ -158,6 +173,17 @@ export default function EcranDetail() {
       await ajouterTitre(titre, statut);
     }
     setEntree(await entreePour(id, type));
+
+    // Terminer une série est l'information la plus intéressante du fil ; une
+    // simple mise en watchlist ne l'est pas, et l'y publier serait du bruit.
+    if (statut === 'termine') {
+      publierActivite({
+        type: 'termine',
+        tmdbId: id,
+        serieTitre: titre.titre,
+        cheminAffiche: titre.cheminAffiche,
+      });
+    }
   }
 
   /** Retire complètement le titre de la bibliothèque. */
@@ -186,9 +212,20 @@ export default function EcranDetail() {
 
   /** Attribue (ou efface) la note personnelle du titre. */
   async function noterTitre(note: number | null) {
-    if (!entree) return;
+    if (!entree || !titre) return;
     await noter(entree.id, note);
     setEntree({ ...entree, notePerso: note });
+
+    // Effacer une note n'est pas un événement : on ne publie que l'ajout.
+    if (note !== null) {
+      publierActivite({
+        type: 'note',
+        tmdbId: id,
+        serieTitre: titre.titre,
+        cheminAffiche: titre.cheminAffiche,
+        note,
+      });
+    }
   }
 
   // Le titre et l'affiche transmis par l'écran appelant tiennent lieu de
@@ -301,26 +338,54 @@ export default function EcranDetail() {
                 })}
               </View>
 
-              {/* Bande-annonce : ouvre YouTube plutôt que d'embarquer un
-                  lecteur — cela demanderait une WebView, une dépendance de plus
-                  et un rendu incertain sur web. Le bouton n'apparaît que si une
-                  vidéo existe vraiment. */}
-              {trailer ? (
+              <View style={styles.actions}>
+                {/* Bande-annonce : ouvre YouTube plutôt que d'embarquer un
+                    lecteur — cela demanderait une WebView, une dépendance de plus
+                    et un rendu incertain sur web. Le bouton n'apparaît que si une
+                    vidéo existe vraiment. */}
+                {trailer ? (
+                  <Pressable
+                    onPress={ouvrirTrailer}
+                    accessibilityRole="link"
+                    accessibilityLabel="Voir la bande-annonce sur YouTube"
+                    style={({ hovered, pressed }: EtatPressable) => [
+                      styles.actionBtn,
+                      hovered && { backgroundColor: couleurs.surface3, borderColor: accent },
+                      pressed && { transform: [{ scale: 0.99 }] },
+                    ]}
+                  >
+                    <Ionicons name="play-circle" size={20} color={accent} />
+                    <Text style={[t.label, { color: couleurs.texte }]}>Bande-annonce</Text>
+                    <Ionicons name="open-outline" size={14} color={couleurs.texteFaible} />
+                  </Pressable>
+                ) : null}
+
                 <Pressable
-                  onPress={ouvrirTrailer}
-                  accessibilityRole="link"
-                  accessibilityLabel="Voir la bande-annonce sur YouTube"
+                  onPress={partager}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Partager ${nomAffiche}`}
                   style={({ hovered, pressed }: EtatPressable) => [
-                    styles.trailer,
+                    styles.actionBtn,
                     hovered && { backgroundColor: couleurs.surface3, borderColor: accent },
                     pressed && { transform: [{ scale: 0.99 }] },
                   ]}
                 >
-                  <Ionicons name="play-circle" size={20} color={accent} />
-                  <Text style={[t.label, { color: couleurs.texte }]}>Bande-annonce</Text>
-                  <Ionicons name="open-outline" size={14} color={couleurs.texteFaible} />
+                  <Ionicons
+                    name={etatPartage === 'copie' ? 'checkmark' : 'share-social-outline'}
+                    size={18}
+                    color={etatPartage === 'copie' ? accent : couleurs.texteDoux}
+                  />
+                  {/* Sur ordinateur, le lien part dans le presse-papier : sans
+                      ce retour, on clique et rien ne semble se passer. */}
+                  <Text style={[t.label, { color: couleurs.texte }]}>
+                    {etatPartage === 'copie'
+                      ? 'Lien copié'
+                      : etatPartage === 'echec'
+                        ? 'Partage indisponible'
+                        : 'Partager'}
+                  </Text>
                 </Pressable>
-              ) : null}
+              </View>
 
               {entree ? (
                 <View style={styles.noteBloc}>
@@ -380,6 +445,8 @@ export default function EcranDetail() {
                   accent={accent}
                   encre={encre}
                   densite={d}
+                  moi={utilisateur?.uid ?? ''}
+                  serie={{ titre: titre.titre, cheminAffiche: titre.cheminAffiche }}
                   onEpisodeCoche={garantirEnCours}
                 />
               ) : null}
@@ -453,6 +520,8 @@ function BlocEpisodes({
   accent,
   encre,
   densite,
+  moi,
+  serie,
   onEpisodeCoche,
 }: {
   serieId: number;
@@ -465,6 +534,10 @@ function BlocEpisodes({
   accent: string;
   encre: string;
   densite: 'mobile' | 'desktop';
+  /** Identifiant de l'utilisateur, pour ne proposer de supprimer que ses propres commentaires. */
+  moi: string;
+  /** Titre et affiche de la série, pour publier l'activité dans le fil des amis. */
+  serie: { titre: string; cheminAffiche: string | null };
   onEpisodeCoche: () => void;
 }) {
   const t = typo(densite);
@@ -532,6 +605,17 @@ function BlocEpisodes({
       await marquerEpisodeVu(serieId, ep.id, ep.saison, ep.numero).catch(() => rafraichir());
       // Cocher un épisode fait entrer la série dans le suivi « en cours ».
       onEpisodeCoche();
+      // Puis on le raconte aux amis. Sans attendre, et sans jamais bloquer :
+      // c'est ici que les épisodes se cochent le plus souvent — l'oublier
+      // laisserait le fil vide malgré une activité réelle.
+      publierActivite({
+        type: 'episode',
+        tmdbId: serieId,
+        serieTitre: serie.titre,
+        cheminAffiche: serie.cheminAffiche,
+        saison: ep.saison,
+        numero: ep.numero,
+      });
     }
   }
 
@@ -570,6 +654,19 @@ function BlocEpisodes({
         await marquerEpisodeVu(serieId, e.id, e.saison, e.numero);
       });
       onEpisodeCoche();
+
+      // UNE seule activité pour tout le lot, sur l'épisode le plus avancé :
+      // rattraper une saison publierait sinon vingt documents pour raconter une
+      // seule séance.
+      const dernier = manquants[manquants.length - 1];
+      publierActivite({
+        type: 'episode',
+        tmdbId: serieId,
+        serieTitre: serie.titre,
+        cheminAffiche: serie.cheminAffiche,
+        saison: dernier.saison,
+        numero: dernier.numero,
+      });
     } catch {
       await rafraichir();
     } finally {
@@ -755,6 +852,21 @@ function BlocEpisodes({
                   </View>
                 </View>
               </Pressable>
+
+              {/* HORS du Pressable : il contient un champ de saisie, et taper
+                  dedans cocherait l'épisode. Décalé pour rester aligné sur le
+                  texte, au-delà de la coche et de l'image. */}
+              <View style={styles.zoneCommentaires}>
+                <Commentaires
+                  serieId={serieId}
+                  episodeId={ep.id}
+                  vu={vu}
+                  moi={moi}
+                  accent={accent}
+                  encre={encre}
+                  densite={densite}
+                />
+              </View>
             </Animated.View>
           );
         })
@@ -809,11 +921,16 @@ const styles = StyleSheet.create({
     borderColor: couleurs.bordure2,
     cursor: 'pointer',
   },
-  trailer: {
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: espacements.s,
+    marginTop: espacements.sm,
+  },
+  actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: espacements.s,
-    alignSelf: 'flex-start',
     height: 44,
     paddingHorizontal: espacements.m,
     borderRadius: rayons.rond,
@@ -821,7 +938,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: couleurs.bordure2,
     borderTopColor: couleurs.lisere,
-    marginTop: espacements.sm,
     cursor: 'pointer',
   },
   railAussi: { flexDirection: 'row', gap: espacements.m, paddingVertical: espacements.xs },
@@ -906,6 +1022,8 @@ const styles = StyleSheet.create({
   episodeInfos: { flex: 1 },
   episodeSynopsis: { color: couleurs.texteFaible, marginTop: espacements.xs },
   episodeNote: { marginTop: espacements.xs },
+  // Aligné sur le texte de l'épisode : coche (24) + gap (16) + image (112) + gap.
+  zoneCommentaires: { marginLeft: 168, marginBottom: espacements.s },
   retirer: {
     flexDirection: 'row',
     alignItems: 'center',

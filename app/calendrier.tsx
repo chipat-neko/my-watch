@@ -134,7 +134,21 @@ export default function EcranCalendrier() {
     <SafeAreaView style={styles.ecran} edges={['top']}>
       <View style={[styles.conteneur, { paddingHorizontal: padding }]}>
         <View style={styles.enTeteLigne}>
-          <Text style={[t.h1, styles.enTete]}>À venir</Text>
+          <View style={styles.titreLigne}>
+            {/* Le calendrier n'est plus un onglet : il lui faut un retour. */}
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Revenir en arrière"
+              style={({ hovered }: EtatPressable) => [
+                styles.retour,
+                hovered && { backgroundColor: couleurs.surface3 },
+              ]}
+            >
+              <Ionicons name="chevron-back" size={22} color={couleurs.texte} />
+            </Pressable>
+            <Text style={[t.h1, styles.enTete]}>À venir</Text>
+          </View>
           {/* Sur web, `RefreshControl` ne répond à aucun geste : sans ce bouton,
               une personne sur ordinateur n'a AUCUN moyen de rafraîchir. */}
           {Platform.OS === 'web' ? (
@@ -311,6 +325,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: espacements.sm,
     marginBottom: espacements.ml,
+  },
+  titreLigne: { flexDirection: 'row', alignItems: 'center', gap: espacements.s },
+  retour: {
+    width: 40,
+    height: 40,
+    borderRadius: rayons.rond,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
   },
   enTete: { color: couleurs.texte },
   rafraichir: {

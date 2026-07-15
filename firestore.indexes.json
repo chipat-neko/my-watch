@@ -1,0 +1,24 @@
+{
+  "_commentaire": "Index composites requis par les requetes du volet social. Firestore cree seul les index a champ unique, mais REFUSE toute requete combinant un filtre et un tri sur des champs differents tant que l'index n'existe pas : sans ce fichier, le fil et les commentaires echouent en production alors qu'ils passent en local (l'emulateur les cree a la volee). Deploiement : firebase deploy --only firestore:indexes",
+  "indexes": [
+    {
+      "_pourquoi": "Le fil : where('visiblePar', array-contains, moi) + orderBy('quand', desc).",
+      "collectionGroup": "activites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visiblePar", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "quand", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "_pourquoi": "Commentaires d'un episode : where('episodeId', ==) + orderBy('quand', desc).",
+      "collectionGroup": "commentaires",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "episodeId", "order": "ASCENDING" },
+        { "fieldPath": "quand", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
