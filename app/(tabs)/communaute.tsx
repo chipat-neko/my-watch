@@ -11,7 +11,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useVariante } from '@/hooks/useVariante';
-import { couleurs, espacements, familles, polices } from '@/theme/theme';
+import { couleurs, espacements, familles, maxLargeur, polices } from '@/theme/theme';
 
 export default function EcranCommunaute() {
   const { accent } = useVariante();
@@ -34,7 +34,13 @@ export default function EcranCommunaute() {
 }
 
 const styles = StyleSheet.create({
-  ecran: { flex: 1, backgroundColor: couleurs.fond },
+  ecran: {
+    flex: 1,
+    backgroundColor: couleurs.fond,
+    width: '100%',
+    maxWidth: maxLargeur,
+    alignSelf: 'center',
+  },
   enTete: {
     color: couleurs.texte,
     fontSize: polices.grandTitre,

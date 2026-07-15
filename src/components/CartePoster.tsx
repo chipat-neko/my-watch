@@ -59,9 +59,9 @@ export function CartePoster({ titre, largeur = 120, onPress }: Props) {
 }
 
 const styles = StyleSheet.create({
-  conteneur: {
-    marginRight: espacements.m,
-  },
+  // Pas de marge ici : l'espacement est géré par le parent (gap), afin que la
+  // carte s'intègre aussi bien dans une grille que dans un rail horizontal.
+  conteneur: {},
   affiche: {
     borderRadius: rayons.m,
     backgroundColor: couleurs.surface2,

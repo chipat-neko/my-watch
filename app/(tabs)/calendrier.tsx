@@ -24,7 +24,7 @@ import { synchroniserNotifications } from '@/services/notifications';
 import { urlAffiche } from '@/theme/constantes';
 import { Chargement } from '@/components/Chargement';
 import { useVariante } from '@/hooks/useVariante';
-import { couleurs, espacements, familles, polices, rayons } from '@/theme/theme';
+import { couleurs, espacements, familles, maxLargeur, polices, rayons } from '@/theme/theme';
 
 const ORDRE = ["Aujourd'hui", 'Demain', 'Cette semaine', 'Plus tard'];
 
@@ -94,41 +94,43 @@ export default function EcranCalendrier() {
 
   return (
     <SafeAreaView style={styles.ecran} edges={['top']}>
-      <Text style={styles.enTete}>À venir</Text>
-      <SectionList
-        sections={sections}
-        keyExtractor={(item) => `${item.serieId}-${item.saison}-${item.numero}`}
-        contentContainerStyle={styles.liste}
-        stickySectionHeadersEnabled={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={rafraichit}
-            onRefresh={rafraichir}
-            tintColor={accent}
-            colors={[accent]}
-          />
-        }
-        renderSectionHeader={({ section }) => (
-          <Text style={[styles.jour, { color: accent }]}>{section.title}</Text>
-        )}
-        renderItem={({ item }) => (
-          <LigneEpisode
-            episode={item}
-            onPress={() =>
-              router.push({
-                pathname: '/titre/[id]',
-                params: { id: String(item.serieId), type: 'serie' },
-              })
-            }
-          />
-        )}
-        ListEmptyComponent={
-          <Text style={styles.vide}>
-            Aucun épisode programmé pour tes séries suivies. Ajoute des séries « en cours » depuis
-            Découvrir.
-          </Text>
-        }
-      />
+      <View style={styles.conteneur}>
+        <Text style={styles.enTete}>À venir</Text>
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => `${item.serieId}-${item.saison}-${item.numero}`}
+          contentContainerStyle={styles.liste}
+          stickySectionHeadersEnabled={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={rafraichit}
+              onRefresh={rafraichir}
+              tintColor={accent}
+              colors={[accent]}
+            />
+          }
+          renderSectionHeader={({ section }) => (
+            <Text style={[styles.jour, { color: accent }]}>{section.title}</Text>
+          )}
+          renderItem={({ item }) => (
+            <LigneEpisode
+              episode={item}
+              onPress={() =>
+                router.push({
+                  pathname: '/titre/[id]',
+                  params: { id: String(item.serieId), type: 'serie' },
+                })
+              }
+            />
+          )}
+          ListEmptyComponent={
+            <Text style={styles.vide}>
+              Aucun épisode programmé pour tes séries suivies. Ajoute des séries « en cours » depuis
+              Découvrir.
+            </Text>
+          }
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -170,6 +172,8 @@ function LigneEpisode({ episode, onPress }: { episode: ProchainEpisode; onPress:
 
 const styles = StyleSheet.create({
   ecran: { flex: 1, backgroundColor: couleurs.fond },
+  // Borne la largeur du contenu et le centre (sinon il s'étire sur grand écran).
+  conteneur: { flex: 1, width: '100%', maxWidth: maxLargeur, alignSelf: 'center' },
   enTete: {
     color: couleurs.texte,
     fontSize: polices.grandTitre,

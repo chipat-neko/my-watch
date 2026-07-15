@@ -20,7 +20,7 @@ import {
   notificationsActivees,
 } from '@/services/notifications';
 import { useVariante, ACCENTS, LIBELLES_VARIANTE, Variante } from '@/hooks/useVariante';
-import { couleurs, espacements, polices, rayons } from '@/theme/theme';
+import { couleurs, espacements, maxLargeur, polices, rayons } from '@/theme/theme';
 
 export default function EcranProfil() {
   const { utilisateur, seDeconnecter } = useAuth();
@@ -194,7 +194,13 @@ function Stat({ valeur, libelle }: { valeur: number; libelle: string }) {
 
 const styles = StyleSheet.create({
   ecran: { flex: 1, backgroundColor: couleurs.fond },
-  contenu: { padding: espacements.m },
+  // Borne la largeur du contenu et le centre (sinon il s'étire sur grand écran).
+  contenu: {
+    padding: espacements.l,
+    width: '100%',
+    maxWidth: maxLargeur,
+    alignSelf: 'center',
+  },
   enTete: {
     color: couleurs.texte,
     fontSize: polices.grandTitre,

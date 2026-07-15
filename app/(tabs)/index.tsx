@@ -19,7 +19,7 @@ import { ProchainEpisode } from '@/lib/tmdb';
 import { urlAffiche, urlFond } from '@/theme/constantes';
 import { EntreeBibliotheque, Titre } from '@/types';
 import { useVariante } from '@/hooks/useVariante';
-import { couleurs, espacements, familles, polices, rayons } from '@/theme/theme';
+import { couleurs, espacements, familles, maxLargeur, polices, rayons } from '@/theme/theme';
 
 /** Convertit une entrée de bibliothèque en Titre minimal (pour les cartes). */
 function versTitre(e: EntreeBibliotheque): Titre {
@@ -201,7 +201,13 @@ export default function EcranAccueil() {
 
 const styles = StyleSheet.create({
   ecran: { flex: 1, backgroundColor: couleurs.fond },
-  contenu: { paddingBottom: espacements.xl },
+  // Borne la largeur du contenu et le centre (sinon il s'étire sur grand écran).
+  contenu: {
+    paddingBottom: espacements.xl,
+    width: '100%',
+    maxWidth: maxLargeur,
+    alignSelf: 'center',
+  },
   enTete: {
     color: couleurs.texte,
     fontSize: polices.grandTitre,

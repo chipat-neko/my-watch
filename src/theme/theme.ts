@@ -44,6 +44,13 @@ export const couleurs = {
   accentRose: '#FF5D7D',
 } as const;
 
+/**
+ * Largeur maximale du contenu. Sans elle, sur web/tablette le contenu s'étire
+ * sur toute la largeur de l'écran (colonnes projetées aux extrémités). Sur
+ * mobile (< 1100px) cette limite n'a aucun effet.
+ */
+export const maxLargeur = 1100;
+
 /** Espacements standard (padding écran 20, gaps 10-14). */
 export const espacements = {
   xs: 4,
