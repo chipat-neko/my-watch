@@ -142,11 +142,51 @@ export default function EcranTrakt() {
 
       <ScrollView contentContainerStyle={styles.contenu}>
         {!configure ? (
-          <Text style={styles.aide}>
-            Pour utiliser Trakt, renseigne EXPO_PUBLIC_TRAKT_CLIENT_ID et
-            EXPO_PUBLIC_TRAKT_CLIENT_SECRET dans ton fichier .env (voir .env.example), puis relance
-            l'application.
-          </Text>
+          // Le message expliquait quoi coller, pas où le trouver. Et il ne
+          // s'affichait même pas : `colle_ici_ton_client_id` n'étant pas vide,
+          // l'app se croyait configurée et échouait en silence.
+          <View>
+            <View style={[styles.alerte, { borderColor: couleurs.statOr }]}>
+              <Ionicons name="warning-outline" size={18} color={couleurs.statOr} />
+              <Text style={[styles.alerteTexte, { color: couleurs.statOr }]}>
+                Trakt n’est pas encore configuré. My Watch a besoin de sa propre application Trakt —
+                elle se crée en deux minutes, gratuitement.
+              </Text>
+            </View>
+
+            <Text style={styles.etapeTitre}>1. Crée l’application</Text>
+            <Text style={styles.aide}>
+              Va sur trakt.tv/oauth/applications → « New Application ». Mets « My Watch » en nom, et
+              dans « Redirect URI » : urn:ietf:wg:oauth:2.0:oob (c’est ce qui autorise la connexion
+              par code, sans navigateur intégré).
+            </Text>
+
+            <Pressable
+              onPress={() => Linking.openURL('https://trakt.tv/oauth/applications/new')}
+              accessibilityRole="link"
+              style={[styles.bouton, { marginTop: espacements.s }]}
+            >
+              <Ionicons name="open-outline" size={18} color={couleurs.texte} />
+              <Text style={styles.boutonTexte}>Ouvrir Trakt</Text>
+            </Pressable>
+
+            <Text style={styles.etapeTitre}>2. Colle les deux clés</Text>
+            <Text style={styles.aide}>
+              Trakt affiche un « Client ID » et un « Client Secret » : deux longues suites de 64
+              caractères. Copie-les dans le fichier .env, à la place de
+              colle_ici_ton_client_id_trakt :
+            </Text>
+            <View style={styles.bloc}>
+              <Text style={styles.code}>EXPO_PUBLIC_TRAKT_CLIENT_ID=…</Text>
+              <Text style={styles.code}>EXPO_PUBLIC_TRAKT_CLIENT_SECRET=…</Text>
+            </View>
+
+            <Text style={styles.etapeTitre}>3. Redéploie</Text>
+            <Text style={styles.aide}>
+              Les clés sont lues à la construction : lance npm run deploy:web pour que le site les
+              prenne en compte.
+            </Text>
+          </View>
         ) : chargement ? (
           <Chargement />
         ) : connecte ? (
@@ -246,6 +286,34 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   boutonTexte: { color: couleurs.texte, fontFamily: familles.bold, fontSize: polices.moyenne },
+  alerte: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.sm,
+    borderWidth: 1,
+    borderRadius: rayons.m,
+    padding: espacements.sm,
+    marginBottom: espacements.l,
+  },
+  alerteTexte: { flex: 1, fontSize: polices.normale, fontFamily: familles.medium, lineHeight: 19 },
+  etapeTitre: {
+    color: couleurs.texte,
+    fontSize: polices.moyenne,
+    fontFamily: familles.bold,
+    marginTop: espacements.l,
+    marginBottom: espacements.xs,
+  },
+  bloc: {
+    backgroundColor: couleurs.surface2,
+    borderWidth: 1,
+    borderColor: couleurs.bordure2,
+    borderRadius: rayons.s,
+    padding: espacements.sm,
+    marginTop: espacements.s,
+    gap: 4,
+  },
+  // Chasse fixe : une clé se recopie caractère par caractère.
+  code: { color: couleurs.texteCorps, fontSize: 12, fontFamily: 'monospace' },
   apercu: {
     backgroundColor: couleurs.surface,
     borderRadius: rayons.l,

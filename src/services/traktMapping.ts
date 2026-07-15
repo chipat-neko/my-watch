@@ -85,3 +85,16 @@ export function mapperNotes(ratings: TraktRating[]): Map<string, number> {
 export function appliquerNotes(titres: TitreTrakt[], notes: Map<string, number>): TitreTrakt[] {
   return titres.map((t) => ({ ...t, note: notes.get(`${t.type}-${t.tmdbId}`) ?? null }));
 }
+
+/**
+ * Vrai si une clé ressemble à un identifiant d'application Trakt.
+ *
+ * Trakt délivre des empreintes hexadécimales de 64 caractères. Vérifier la
+ * FORME, et non la simple présence, est indispensable : le modèle `.env.example`
+ * contient `colle_ici_ton_client_id_trakt`, qui n'est pas vide. Un simple
+ * `length > 0` déclarait donc l'application configurée, masquait le message
+ * d'aide, et lançait une connexion vouée à un 403 — sans rien expliquer.
+ */
+export function cleTraktValide(cle: string): boolean {
+  return /^[a-f0-9]{64}$/i.test(cle.trim());
+}

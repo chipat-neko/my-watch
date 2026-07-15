@@ -25,7 +25,10 @@ import {
   TraktWatchedMovie,
   TraktRating,
   TitreTrakt,
+  cleTraktValide,
 } from '@/services/traktMapping';
+
+export { cleTraktValide };
 
 const BASE = 'https://api.trakt.tv';
 const CLIENT_ID = process.env.EXPO_PUBLIC_TRAKT_CLIENT_ID ?? '';
@@ -42,9 +45,9 @@ interface JetonTrakt {
 
 // --- Configuration / état ----------------------------------------------------
 
-/** Vrai si les identifiants d'application Trakt sont renseignés (.env). */
+/** Vrai si les identifiants d'application Trakt sont réellement renseignés (.env). */
 export function traktConfigure(): boolean {
-  return CLIENT_ID.length > 0 && CLIENT_SECRET.length > 0;
+  return cleTraktValide(CLIENT_ID) && cleTraktValide(CLIENT_SECRET);
 }
 
 async function chargerJeton(): Promise<JetonTrakt | null> {
