@@ -16,6 +16,7 @@ import { Chargement } from '@/components/Chargement';
 import { attendre } from '@/services/async';
 import {
   traktConfigure,
+  apercuClientId,
   estConnecteTrakt,
   demarrerAppairage,
   sonderAppairage,
@@ -355,6 +356,30 @@ export default function EcranTrakt() {
               </Text>
             </View>
 
+            {/* Diagnostic : quand Trakt refuse un code encore valide, la seule
+                cause restante est que l'application visée n'est pas la bonne.
+                On affiche donc de quoi comparer avec la page de Trakt, plutôt
+                que de laisser chercher à l'aveugle. */}
+            <View style={styles.diag}>
+              <Text style={styles.diagTexte}>
+                Trakt refuse ce code alors qu’il est encore valide ? Vérifie que ton application
+                Trakt affiche bien ce Client ID :
+              </Text>
+              <Text style={styles.diagCle}>{apercuClientId()}</Text>
+              <Text style={styles.diagTexte}>
+                et que sa « Redirect URI » vaut exactement urn:ietf:wg:oauth:2.0:oob — sans elle, la
+                connexion par code n’est pas activée.
+              </Text>
+              <Pressable
+                onPress={() => ouvrirTrakt('https://trakt.tv/oauth/applications')}
+                accessibilityRole="link"
+                style={styles.diagLien}
+              >
+                <Ionicons name="open-outline" size={13} color={couleurs.texteDoux} />
+                <Text style={styles.diagLienTexte}>Voir mes applications Trakt</Text>
+              </Pressable>
+            </View>
+
             {/* Sans ce bouton, un code déjà saisi ailleurs bloquait tout : il
                 n'existait aucun moyen d'en redemander un sans quitter l'écran. */}
             <Pressable
@@ -470,6 +495,31 @@ const styles = StyleSheet.create({
     marginTop: espacements.xs,
   },
   copierTexte: { color: couleurs.texteFaible, fontSize: 11, fontFamily: familles.semibold },
+  diag: {
+    backgroundColor: couleurs.surface2,
+    borderWidth: 1,
+    borderColor: couleurs.bordure2,
+    borderRadius: rayons.s,
+    padding: espacements.sm,
+    marginTop: espacements.l,
+    gap: espacements.xs,
+  },
+  diagTexte: {
+    color: couleurs.texteFaible,
+    fontSize: 11,
+    fontFamily: familles.medium,
+    lineHeight: 16,
+  },
+  // Chasse fixe : une cle se compare caractere par caractere.
+  diagCle: { color: couleurs.texteCorps, fontSize: 12, fontFamily: 'monospace' },
+  diagLien: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.xs,
+    marginTop: espacements.xs,
+    cursor: 'pointer',
+  },
+  diagLienTexte: { color: couleurs.texteDoux, fontSize: 11, fontFamily: familles.semibold },
   attente: {
     flexDirection: 'row',
     alignItems: 'center',

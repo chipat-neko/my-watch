@@ -53,6 +53,20 @@ export function traktConfigure(): boolean {
   return cleTraktValide(CLIENT_ID) && cleTraktValide(CLIENT_SECRET);
 }
 
+/**
+ * Début et fin du Client ID, pour vérifier d'un coup d'œil qu'il s'agit bien de
+ * l'application attendue.
+ *
+ * Tronqué : un Client ID n'est pas un secret (il circule dans chaque requête),
+ * mais l'afficher en entier n'aide personne et invite à le diffuser. Les deux
+ * bouts suffisent à le comparer avec la page de Trakt.
+ */
+export function apercuClientId(): string {
+  const c = CLIENT_ID.trim();
+  if (c.length < 16) return '(non renseigné)';
+  return `${c.slice(0, 8)}…${c.slice(-4)}`;
+}
+
 async function chargerJeton(): Promise<JetonTrakt | null> {
   const brut = await getItem(CLE_JETON);
   return brut ? (JSON.parse(brut) as JetonTrakt) : null;

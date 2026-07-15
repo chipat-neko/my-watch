@@ -6,10 +6,7 @@
   "hosting": {
     "public": "dist",
     "_comment_ignore": "NE PAS remettre '**/node_modules/**' : Expo publie les polices Manrope et les icones sous dist/assets/node_modules/@expo-google-fonts/... et dist/assets/node_modules/@expo/vector-icons/... Les exclure les empeche d'etre deployees ; le rewrite SPA renvoie alors index.html a leur place, useFonts echoue, et l'application s'arrete sur un ecran VIDE (page blanche en production).",
-    "ignore": [
-      "firebase.json",
-      "**/.*"
-    ],
+    "ignore": ["firebase.json", "**/.*"],
     "_commentaire_headers": "L'ordre compte, et a l'envers de l'intuition : Firebase applique la DERNIERE regle qui correspond. La regle fourre-tout vient donc en premier, et les assets hashes ensuite pour l'emporter.",
     "headers": [
       {
