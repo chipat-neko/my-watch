@@ -110,3 +110,33 @@ export function cleTraktValide(cle: string): boolean {
   // Un jeton ne contient ni espace, ni accent, ni ponctuation.
   return /^[A-Za-z0-9_-]+$/.test(c);
 }
+
+/**
+ * Issues possibles d'un sondage.
+ *
+ * `deja_utilise` était auparavant confondu avec `expire`. Ce sont pourtant deux
+ * situations distinctes : un code expiré n'a jamais servi, un code déjà utilisé
+ * a bel et bien été validé — mais son jeton est parti ailleurs (un autre onglet,
+ * une tentative précédente). Les annoncer pareil laisse croire à une panne alors
+ * qu'il suffit de repartir d'un code neuf.
+ */
+export type EtatSondage = 'en_attente' | 'ok' | 'refuse' | 'expire' | 'deja_utilise' | 'invalide';
+
+/**
+ * Traduit un statut HTTP de Trakt en issue de sondage.
+ *
+ * Exporté pour être testé : c'est une table de correspondance, et une erreur
+ * dedans se paie par un message incompréhensible au pire moment.
+ */
+export function etatDepuisStatut(statut: number): EtatSondage {
+  // 400 = pas encore autorisé ; 429 = sonder moins vite. Dans les deux cas, on
+  // patiente : ce ne sont pas des échecs.
+  if (statut === 400 || statut === 429) return 'en_attente';
+  if (statut === 418) return 'refuse';
+  if (statut === 409) return 'deja_utilise';
+  if (statut === 410) return 'expire';
+  if (statut === 404) return 'invalide';
+  // Tout autre statut (500, coupure…) : on préfère annoncer un code à refaire
+  // plutôt que de sonder indéfiniment dans le vide.
+  return 'invalide';
+}

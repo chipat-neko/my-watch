@@ -29,6 +29,20 @@ import { useVariante } from '@/hooks/useVariante';
 import { EtatPressable } from '@/types';
 import { couleurs, espacements, familles, polices, rayons } from '@/theme/theme';
 
+/**
+ * Ce qu'on dit à l'utilisateur selon l'issue du sondage.
+ *
+ * Chaque message annonce la cause ET la suite : un message qui constate sans
+ * dire quoi faire laisse bloqué.
+ */
+const MESSAGES: Partial<Record<EtatSondage, string>> = {
+  refuse: 'Connexion refusée sur Trakt. Tu peux réessayer avec un nouveau code.',
+  expire: 'Ce code a expiré (ils ne durent que quelques minutes). Demande-en un nouveau.',
+  deja_utilise:
+    'Ce code a déjà servi — sans doute dans un autre onglet. Demande un nouveau code : chacun ne vaut qu’une fois.',
+  invalide: 'Trakt n’a pas reconnu ce code. Demande-en un nouveau.',
+};
+
 export default function EcranTrakt() {
   const router = useRouter();
   const { accent, encre } = useVariante();
@@ -41,6 +55,8 @@ export default function EcranTrakt() {
   const [resultat, setResultat] = useState<ResultatSyncTrakt | null>(null);
   /** Confirme la copie du code : sans retour, on ne sait pas si le clic a agi. */
   const [copie, setCopie] = useState(false);
+  /** Vrai pendant qu'on demande un code : evite deux demandes concurrentes. */
+  const [demande, setDemande] = useState(false);
 
   useEffect(() => {
     estConnecteTrakt().then((c) => {
@@ -59,7 +75,7 @@ export default function EcranTrakt() {
         await attendre(code.interval * 1000);
         if (!actif) return;
         if (Date.now() - debut > code.expiresIn * 1000) {
-          setStatut('Code expiré, réessaie.');
+          setStatut(MESSAGES.expire!);
           setCode(null);
           return;
         }
@@ -76,13 +92,11 @@ export default function EcranTrakt() {
           setStatut('Connecté à Trakt ! Tu peux lancer la synchronisation.');
           return;
         }
-        if (etat === 'refuse') {
-          setStatut('Connexion refusée.');
-          setCode(null);
-          return;
-        }
-        if (etat === 'expire') {
-          setStatut('Code expiré, réessaie.');
+        if (etat !== 'en_attente') {
+          // Chaque issue a sa cause et sa suite : les annoncer toutes comme un
+          // « code expiré » laissait croire à une panne alors qu'il suffit
+          // souvent de repartir d'un code neuf.
+          setStatut(MESSAGES[etat] ?? 'Connexion interrompue. Demande un nouveau code.');
           setCode(null);
           return;
         }
@@ -97,6 +111,12 @@ export default function EcranTrakt() {
   async function connecter() {
     setStatut(null);
     setResultat(null);
+    setCopie(false);
+    // RESET : on jette le code courant AVANT d'en demander un neuf. Sans cela,
+    // la boucle de sondage de l'ancien continuait de tourner en parallèle et
+    // pouvait écraser l'état du nouveau.
+    setCode(null);
+    setDemande(true);
     try {
       const c = await demarrerAppairage();
       setCode(c);
@@ -108,6 +128,8 @@ export default function EcranTrakt() {
       // Le code s'affiche, et un bouton ouvre Trakt dans un nouvel onglet.
     } catch {
       setStatut('Impossible de démarrer la connexion Trakt.');
+    } finally {
+      setDemande(false);
     }
   }
 
@@ -300,8 +322,27 @@ export default function EcranTrakt() {
 
             <View style={styles.attente}>
               <ActivityIndicator size="small" color={couleurs.texteFaible} />
-              <Text style={styles.aide}>En attente de ton autorisation…</Text>
+              <Text style={[styles.aide, { flex: 1 }]}>En attente de ton autorisation…</Text>
             </View>
+
+            {/* Sans ce bouton, un code déjà saisi ailleurs bloquait tout : il
+                n'existait aucun moyen d'en redemander un sans quitter l'écran. */}
+            <Pressable
+              onPress={connecter}
+              disabled={demande}
+              accessibilityRole="button"
+              accessibilityLabel="Demander un nouveau code"
+              style={({ hovered }: EtatPressable) => [
+                styles.bouton,
+                { marginTop: espacements.s },
+                hovered && { backgroundColor: couleurs.surface3 },
+              ]}
+            >
+              <Ionicons name="refresh" size={16} color={couleurs.texteDoux} />
+              <Text style={[styles.boutonTexte, { color: couleurs.texteDoux }]}>
+                {demande ? 'Un instant…' : 'Nouveau code'}
+              </Text>
+            </Pressable>
           </View>
         ) : (
           <Pressable

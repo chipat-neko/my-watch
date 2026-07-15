@@ -10,6 +10,7 @@ import {
   TraktWatchedMovie,
   TraktRating,
   cleTraktValide,
+  etatDepuisStatut,
 } from './traktMapping';
 
 describe('mapperWatched', () => {
@@ -120,5 +121,44 @@ describe('cleTraktValide', () => {
     expect(cleTraktValide('b'.repeat(43))).toBe(true);
     expect(cleTraktValide('b'.repeat(64))).toBe(true);
     expect(cleTraktValide('b'.repeat(100))).toBe(true);
+  });
+});
+
+// =============================================================================
+//  Issues du sondage d'appairage
+//  ---------------------------------------------------------------------------
+//  Ces tests existent à cause d'un blocage réel : « déjà utilisé » (409) était
+//  annoncé comme « code expiré », ce qui laissait croire à une panne alors qu'il
+//  suffisait de repartir d'un code neuf.
+// =============================================================================
+
+describe('etatDepuisStatut', () => {
+  it('patiente tant que Trakt attend l’autorisation (400)', () => {
+    expect(etatDepuisStatut(400)).toBe('en_attente');
+  });
+
+  it('patiente aussi quand Trakt demande de ralentir (429) : ce n’est pas un échec', () => {
+    expect(etatDepuisStatut(429)).toBe('en_attente');
+  });
+
+  it('distingue « déjà utilisé » (409) de « expiré » (410)', () => {
+    // Le défaut d'origine : les deux renvoyaient « expire », et le message
+    // invitait à attendre un code qui ne viendrait jamais.
+    expect(etatDepuisStatut(409)).toBe('deja_utilise');
+    expect(etatDepuisStatut(410)).toBe('expire');
+  });
+
+  it('reconnaît un refus explicite (418)', () => {
+    expect(etatDepuisStatut(418)).toBe('refuse');
+  });
+
+  it('reconnaît un code inconnu (404)', () => {
+    expect(etatDepuisStatut(404)).toBe('invalide');
+  });
+
+  it('n’attend pas indéfiniment sur une panne serveur', () => {
+    // Mieux vaut proposer un nouveau code que sonder dans le vide.
+    expect(etatDepuisStatut(500)).toBe('invalide');
+    expect(etatDepuisStatut(503)).toBe('invalide');
   });
 });

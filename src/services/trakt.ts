@@ -26,9 +26,12 @@ import {
   TraktRating,
   TitreTrakt,
   cleTraktValide,
+  etatDepuisStatut,
+  EtatSondage,
 } from '@/services/traktMapping';
 
-export { cleTraktValide };
+export { cleTraktValide, etatDepuisStatut };
+export type { EtatSondage };
 
 const BASE = 'https://api.trakt.tv';
 const CLIENT_ID = process.env.EXPO_PUBLIC_TRAKT_CLIENT_ID ?? '';
@@ -97,11 +100,13 @@ export async function demarrerAppairage(): Promise<CodeAppareil> {
   };
 }
 
-export type EtatSondage = 'en_attente' | 'ok' | 'refuse' | 'expire';
-
 /**
  * Étape 2 : sonde une fois si l'utilisateur a autorisé l'appairage. À appeler en
  * boucle toutes les `interval` secondes jusqu'à un état différent de "en_attente".
+ *
+ * Les codes viennent de la documentation Trakt (device/token) :
+ *   400 Pending · 404 Not Found · 409 Already Used · 410 Expired
+ *   418 Denied  · 429 Slow Down
  */
 export async function sonderAppairage(deviceCode: string): Promise<EtatSondage> {
   const reponse = await fetch(`${BASE}/oauth/device/token`, {
@@ -124,10 +129,8 @@ export async function sonderAppairage(deviceCode: string): Promise<EtatSondage> 
     });
     return 'ok';
   }
-  // 400 = en attente d'autorisation ; 429 = sonder moins vite -> on patiente.
-  if (reponse.status === 400 || reponse.status === 429) return 'en_attente';
-  if (reponse.status === 418) return 'refuse'; // refusé explicitement
-  return 'expire'; // 404 / 409 / 410 -> recommencer l'appairage
+
+  return etatDepuisStatut(reponse.status);
 }
 
 // --- Appels API authentifiés -------------------------------------------------
