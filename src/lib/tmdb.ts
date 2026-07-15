@@ -56,6 +56,7 @@ function versTitre(brut: any, typeForce?: TypeMedia): Titre {
     // Présent uniquement sur le détail d'une série (/tv/{id}) ; permet à
     // l'écran détail de connaître le nombre de saisons sans second appel réseau.
     nombreSaisons: brut.number_of_seasons ?? undefined,
+    nombreEpisodes: brut.number_of_episodes ?? undefined,
   };
 }
 
@@ -126,6 +127,12 @@ export interface ProchainEpisode {
   serieId: number;
   serieTitre: string;
   cheminAffiche: string | null;
+  /**
+   * Image de fond (backdrop) 16:9 de la série. Indispensable au hero : une
+   * affiche 2:3 recadrée en cover dans un cadre 16:9 n'en montre qu'une bande
+   * centrale, ce qui donne un hero illisible.
+   */
+  cheminFond: string | null;
   nom: string;
   saison: number;
   numero: number;
@@ -145,6 +152,7 @@ export async function prochainEpisode(serieId: number): Promise<ProchainEpisode 
     serieId,
     serieTitre: brut.name,
     cheminAffiche: brut.poster_path ?? null,
+    cheminFond: brut.backdrop_path ?? null,
     nom: prochain.name ?? '',
     saison: prochain.season_number,
     numero: prochain.episode_number,

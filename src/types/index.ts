@@ -11,6 +11,18 @@
 export type TypeMedia = 'film' | 'serie';
 
 /**
+ * État d'un `Pressable`.
+ *
+ * `hovered` est bien fourni à l'exécution par react-native-web, mais il est
+ * absent des typings de React Native (qui ne connaît que `pressed`). Ce type
+ * évite d'avoir à écrire `any` sur chaque callback de style.
+ */
+export interface EtatPressable {
+  pressed: boolean;
+  hovered?: boolean;
+}
+
+/**
  * Statut de suivi d'un titre dans la bibliothèque de l'utilisateur.
  * - "a_voir"    : ajouté à la watchlist, pas encore commencé
  * - "en_cours"  : série en cours de visionnage
@@ -50,6 +62,11 @@ export interface Titre {
    * Absent pour les films et pour les résultats de recherche/tendances.
    */
   nombreSaisons?: number;
+  /**
+   * Nombre total d'épisodes diffusés (séries uniquement, renseigné par le
+   * détail TMDb). Sert de dénominateur à la barre de progression.
+   */
+  nombreEpisodes?: number;
 }
 
 /** Un épisode d'une série. */

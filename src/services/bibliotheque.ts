@@ -157,6 +157,24 @@ function versEpisodeVu(id: string, d: any): EpisodeVu {
   };
 }
 
+/**
+ * Compte les épisodes vus, par série, en UNE seule lecture Firestore.
+ *
+ * L'Accueil affiche la progression de plusieurs séries à la fois : une requête
+ * `where('serieId','==',…)` par série y coûterait N allers-retours pour une
+ * collection qui tient largement en mémoire.
+ */
+export async function comptesEpisodesVus(): Promise<Map<number, number>> {
+  const uid = idUtilisateur();
+  const snap = await getDocs(refEpisodes(uid));
+  const comptes = new Map<number, number>();
+  for (const d of snap.docs) {
+    const serieId = d.data().serieId as number;
+    comptes.set(serieId, (comptes.get(serieId) ?? 0) + 1);
+  }
+  return comptes;
+}
+
 /** Récupère les épisodes vus d'une série. */
 export async function episodesVusDeLaSerie(serieId: number): Promise<EpisodeVu[]> {
   const uid = idUtilisateur();

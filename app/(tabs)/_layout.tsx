@@ -18,21 +18,29 @@ import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-na
 import { BottomTabBar, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useVariante } from '@/hooks/useVariante';
-import { couleurs, espacements, familles, polices, rayons } from '@/theme/theme';
-
-/** Largeur de la barre latérale sur grand écran. */
-const LARGEUR_RAIL = 232;
-/** Seuil au-delà duquel on passe en barre latérale (Material Adaptive). */
-const SEUIL_LARGE = 1024;
+import { EtatPressable } from '@/types';
+import {
+  couleurs,
+  espacements,
+  familles,
+  largeurRail,
+  rayons,
+  seuilLarge,
+  typo,
+} from '@/theme/theme';
 
 /** Barre latérale (grand écran) : logo + destinations verticales. */
 function BarreLaterale({ state, descriptors, navigation }: BottomTabBarProps) {
-  const { accent } = useVariante();
+  const { accent, encre } = useVariante();
+  const t = typo('desktop');
 
   return (
     <View style={styles.rail}>
       <View style={styles.railEnTete}>
-        <Ionicons name="tv" size={22} color={accent} />
+        {/* Carré d'accent + wordmark : une icône générique ne fait pas une marque. */}
+        <View style={[styles.logo, { backgroundColor: accent }]}>
+          <Ionicons name="tv" size={17} color={encre} />
+        </View>
         <Text style={styles.railLogo}>My Watch</Text>
       </View>
 
@@ -40,7 +48,10 @@ function BarreLaterale({ state, descriptors, navigation }: BottomTabBarProps) {
         const { options } = descriptors[route.key];
         const libelle = options.title ?? route.name;
         const actif = state.index === index;
-        const couleur = actif ? accent : couleurs.ongletInactif;
+        // L'état actif était un fond `surface2` sur `surface` : quatre points de
+        // luminance, donc INVISIBLE. Le handoff dit : fond d'accent plein, texte
+        // en encre d'accent.
+        const couleur = actif ? encre : couleurs.ongletInactif;
 
         return (
           <Pressable
@@ -56,16 +67,15 @@ function BarreLaterale({ state, descriptors, navigation }: BottomTabBarProps) {
             accessibilityRole="button"
             accessibilityState={{ selected: actif }}
             accessibilityLabel={libelle}
-            // Feedback au survol/press : une UI sans état pressé fait "figée".
-            style={({ pressed, hovered }: any) => [
+            style={({ pressed, hovered }: EtatPressable) => [
               styles.railItem,
-              actif && { backgroundColor: couleurs.surface2 },
-              (pressed || hovered) && !actif && { backgroundColor: couleurs.surface },
+              actif && { backgroundColor: accent },
+              hovered && !actif && { backgroundColor: couleurs.surface3 },
               pressed && { opacity: 0.85 },
             ]}
           >
-            {options.tabBarIcon?.({ color: couleur, size: 22, focused: actif })}
-            <Text style={[styles.railTexte, { color: couleur }]}>{libelle}</Text>
+            {options.tabBarIcon?.({ color: couleur, size: 21, focused: actif })}
+            <Text style={[t.label, { color: couleur }]}>{libelle}</Text>
           </Pressable>
         );
       })}
@@ -76,13 +86,13 @@ function BarreLaterale({ state, descriptors, navigation }: BottomTabBarProps) {
 export default function LayoutOnglets() {
   const { accent } = useVariante();
   const { width } = useWindowDimensions();
-  const grandEcran = width >= SEUIL_LARGE;
+  const grandEcran = width >= seuilLarge;
 
   return (
     <Tabs
       // Sur grand écran, on réserve la place de la barre latérale.
       sceneContainerStyle={
-        grandEcran ? { paddingLeft: LARGEUR_RAIL, backgroundColor: couleurs.fond } : undefined
+        grandEcran ? { paddingLeft: largeurRail, backgroundColor: couleurs.page } : undefined
       }
       tabBar={(props) => (grandEcran ? <BarreLaterale {...props} /> : <BottomTabBar {...props} />)}
       screenOptions={{
@@ -141,29 +151,43 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    width: LARGEUR_RAIL,
-    backgroundColor: couleurs.surface,
+    width: largeurRail,
+    // Plus sombre que la zone de contenu : la séparation se fait par la
+    // luminance, pas par un trait.
+    backgroundColor: couleurs.page,
     borderRightWidth: 1,
     borderRightColor: couleurs.bordure,
-    paddingHorizontal: espacements.m,
+    paddingHorizontal: espacements.sm,
     paddingTop: espacements.l,
-    gap: 4,
+    gap: espacements.xs,
   },
   railEnTete: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: espacements.s,
+    gap: espacements.sm,
     paddingHorizontal: espacements.s,
     marginBottom: espacements.l,
   },
-  railLogo: { color: couleurs.texte, fontSize: polices.moyenne, fontFamily: familles.extrabold },
+  logo: {
+    width: 32,
+    height: 32,
+    borderRadius: rayons.s,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  railLogo: {
+    color: couleurs.texte,
+    fontSize: 17,
+    fontFamily: familles.extrabold,
+    letterSpacing: -0.4,
+  },
   railItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: espacements.m,
-    paddingVertical: espacements.m,
-    paddingHorizontal: espacements.m,
+    gap: espacements.sm,
+    height: 44,
+    paddingHorizontal: espacements.sm,
     borderRadius: rayons.m,
+    cursor: 'pointer',
   },
-  railTexte: { fontSize: polices.normale, fontFamily: familles.semibold },
 });

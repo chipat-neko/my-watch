@@ -1,25 +1,59 @@
 // =============================================================================
 //  Écran : Accueil (« À suivre »)
 //  ---------------------------------------------------------------------------
-//  Le cœur du suivi : une grande carte « prochain épisode », une liste
-//  « Reprendre » (séries en cours) et un rail « Ta watchlist » (à voir).
-//  Tout est branché sur la bibliothèque Firestore + les prochains épisodes TMDb.
+//  Le cœur du suivi : un hero « prochain épisode », une liste « Reprendre »
+//  (séries en cours, avec leur avancement), un rail « Ta watchlist » (à voir) et
+//  un rail « Vu récemment ».
+//
+//  Composition (leçons du benchmark Netflix / Plex / Trakt) :
+//   - Le HERO et les RAILS sont full-bleed : ils ignorent la borne de largeur.
+//     Un rail qui s'arrête pile au bord semble fini ; un rail dont le dernier
+//     poster sort du cadre dit « il y en a plus ».
+//   - Le hero n'a PAS de coins arrondis sur grand écran : le coin arrondi dit
+//     « carte », le bord franc dit « cinéma ».
+//   - L'image du hero teinte toute la page (FondAmbiance) au lieu d'être posée
+//     sur un aplat.
 // =============================================================================
 
-import { useCallback, useState } from 'react';
-import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CartePoster } from '@/components/CartePoster';
-import { Chargement } from '@/components/Chargement';
+import { FondAmbiance } from '@/components/FondAmbiance';
+import { Progression } from '@/components/Progression';
+import { GrilleSquelettes, LignesSquelettes, Squelette } from '@/components/Squelette';
 import { chargerBibliotheque } from '@/services/bibliotheque';
+import { avanceesDesSeries, AvanceeSerie } from '@/services/progression';
 import { prochainsEpisodes } from '@/services/agenda';
 import { ProchainEpisode } from '@/lib/tmdb';
 import { urlAffiche, urlFond } from '@/theme/constantes';
-import { EntreeBibliotheque, Titre } from '@/types';
+import { EntreeBibliotheque, EtatPressable, Titre } from '@/types';
 import { useVariante } from '@/hooks/useVariante';
-import { couleurs, espacements, familles, maxLargeur, polices, rayons } from '@/theme/theme';
+import {
+  couleurs,
+  densiteDe,
+  espacements,
+  fondus,
+  largeurRail,
+  maxLargeur,
+  paddingEcran,
+  rayons,
+  seuilLarge,
+  typo,
+} from '@/theme/theme';
 
 /** Convertit une entrée de bibliothèque en Titre minimal (pour les cartes). */
 function versTitre(e: EntreeBibliotheque): Titre {
@@ -40,26 +74,43 @@ function versTitre(e: EntreeBibliotheque): Titre {
 export default function EcranAccueil() {
   const router = useRouter();
   const { variante, accent, encre } = useVariante();
+  const { width: fenetre } = useWindowDimensions();
+
+  const grandEcran = fenetre >= seuilLarge;
+  // La largeur RÉELLEMENT disponible : la barre latérale occupe déjà sa place.
+  const largeurUtile = fenetre - (grandEcran ? largeurRail : 0);
+  const d = densiteDe(largeurUtile);
+  const t = typo(d);
+  const padding = paddingEcran(largeurUtile);
+
   const [entrees, setEntrees] = useState<EntreeBibliotheque[]>([]);
   const [prochains, setProchains] = useState<ProchainEpisode[]>([]);
-  const [chargement, setChargement] = useState(true);
+  const [avancees, setAvancees] = useState<Map<number, AvanceeSerie>>(new Map());
+  const [premierChargement, setPremierChargement] = useState(true);
+  // Désarme le stagger après le premier rendu : rejouer l'animation d'entrée à
+  // chaque retour d'onglet est du clignotement, pas du raffinement.
+  const staggerArme = useRef(true);
 
   useFocusEffect(
     useCallback(() => {
       let actif = true;
       (async () => {
-        setChargement(true);
         try {
           const [biblio, eps] = await Promise.all([
             chargerBibliotheque(),
             prochainsEpisodes().catch(() => [] as ProchainEpisode[]),
           ]);
-          if (actif) {
-            setEntrees(biblio);
-            setProchains(eps);
-          }
+          if (!actif) return;
+          setEntrees(biblio);
+          setProchains(eps);
+
+          const av = await avanceesDesSeries(biblio).catch(() => new Map<number, AvanceeSerie>());
+          if (actif) setAvancees(av);
         } finally {
-          if (actif) setChargement(false);
+          if (actif) {
+            setPremierChargement(false);
+            setTimeout(() => (staggerArme.current = false), 800);
+          }
         }
       })();
       return () => {
@@ -72,245 +123,547 @@ export default function EcranAccueil() {
     router.push({ pathname: '/titre/[id]', params: { id: String(tmdbId), type } });
   }
 
-  if (chargement) return <Chargement message="Chargement de ta liste…" />;
-
   const enCours = entrees.filter((e) => e.statut === 'en_cours');
   const aVoir = entrees.filter((e) => e.statut === 'a_voir');
-  const hero = prochains[0] ?? null;
-  const titreEcran = variante === 'social' ? 'Fil d’actu' : 'À suivre';
+  // Réparation du trou historique de cet écran : quand rien n'était « en cours »
+  // ni « à voir » — par exemple après avoir tout terminé — AUCUNE section ne
+  // s'affichait, et l'état vide ne se déclenchait pas non plus (`entrees` n'est
+  // pas vide). L'écran restait donc littéralement blanc sous son titre.
+  const termines = entrees
+    .filter((e) => e.statut === 'termine')
+    .sort((a, b) => (b.vuLe ?? b.ajouteLe).localeCompare(a.vuLe ?? a.ajouteLe));
 
-  // État vide : aucune série suivie.
-  if (entrees.length === 0) {
+  const titreEcran = variante === 'social' ? 'Fil d’actu' : 'À suivre';
+  const hero = prochains[0] ?? null;
+
+  // Hauteur du hero : 420-560 sur desktop (en deçà de 420 c'est une bannière
+  // publicitaire, au-delà de 560 le contenu suivant disparaît sous la ligne de
+  // flottaison) ; 62 % de la largeur sur mobile.
+  const hauteurHero = grandEcran
+    ? Math.round(Math.min(560, Math.max(420, largeurUtile * 0.32)))
+    : Math.round(largeurUtile * 0.62);
+
+  const largeurRailPoster = d === 'desktop' ? 168 : 116;
+
+  // --- Premier chargement : squelettes aux dimensions réelles ----------------
+  if (premierChargement) {
     return (
       <SafeAreaView style={styles.ecran} edges={['top']}>
-        <Text style={styles.enTete}>{titreEcran}</Text>
-        <View style={styles.vide}>
-          <Ionicons name="tv-outline" size={52} color={accent} />
-          <Text style={styles.videTitre}>Ta liste est vide</Text>
-          <Text style={styles.videSous}>
-            Ajoute des séries et des films depuis l’onglet Découvrir.
-          </Text>
-          <Pressable
-            style={[styles.videBtn, { backgroundColor: accent }]}
-            onPress={() => router.push('/decouvrir')}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.videBtnTexte, { color: encre }]}>Découvrir</Text>
-          </Pressable>
+        <View style={{ padding }}>
+          <Squelette largeur="45%" hauteur={t.h1.fontSize} rayon={rayons.s} />
+          <Squelette
+            largeur="100%"
+            hauteur={hauteurHero}
+            rayon={grandEcran ? 0 : rayons.hero}
+            style={{ marginTop: espacements.l }}
+          />
+          <View style={{ marginTop: espacements.xl }}>
+            <LignesSquelettes nombre={3} />
+          </View>
+          <View style={{ marginTop: espacements.xl }}>
+            <GrilleSquelettes
+              colonnes={Math.max(2, Math.floor(largeurUtile / (largeurRailPoster + 20)))}
+              largeur={largeurRailPoster}
+              lignes={1}
+              gap={espacements.m}
+            />
+          </View>
         </View>
       </SafeAreaView>
+    );
+  }
+
+  // --- Aucune série suivie du tout ------------------------------------------
+  if (entrees.length === 0) {
+    return (
+      <EtatVide
+        titre="Ta liste est vide"
+        sous="Ajoute des séries et des films depuis l’onglet Découvrir : ils apparaîtront ici avec leur avancement."
+        icone="tv-outline"
+        libelleAction="Découvrir"
+        onAction={() => router.push('/decouvrir')}
+        accent={accent}
+        encre={encre}
+        enTete={titreEcran}
+        padding={padding}
+        densite={d}
+      />
+    );
+  }
+
+  // --- Des séries, mais rien à suivre (tout terminé / abandonné) -------------
+  // C'est le cas qui laissait l'écran blanc. Il mérite son propre message : dire
+  // « ta liste est vide » à quelqu'un qui a 40 séries terminées serait faux.
+  const riensASuivre = enCours.length === 0 && aVoir.length === 0 && !hero;
+  if (riensASuivre && termines.length > 0) {
+    return (
+      <EtatVide
+        titre="Tu es à jour"
+        sous={`${termines.length} ${termines.length > 1 ? 'titres terminés' : 'titre terminé'}, et rien en cours. Trouve ta prochaine série dans Découvrir.`}
+        icone="checkmark-done-outline"
+        libelleAction="Trouver une série"
+        onAction={() => router.push('/decouvrir')}
+        accent={accent}
+        encre={encre}
+        enTete={titreEcran}
+        padding={padding}
+        densite={d}
+      />
     );
   }
 
   return (
     <SafeAreaView style={styles.ecran} edges={['top']}>
       <ScrollView contentContainerStyle={styles.contenu} showsVerticalScrollIndicator={false}>
-        <Text style={styles.enTete}>{titreEcran}</Text>
+        {/* L'image du hero teinte toute la page : l'écran cesse d'être un formulaire. */}
+        <FondAmbiance
+          chemin={hero?.cheminFond ?? hero?.cheminAffiche ?? null}
+          hauteur={hauteurHero + 200}
+        />
 
-        {/* Hero : prochain épisode à venir */}
+        <Text style={[t.h1, styles.enTete, { paddingHorizontal: padding }]}>{titreEcran}</Text>
+
         {hero ? (
-          <Pressable
-            style={styles.hero}
+          <Hero
+            episode={hero}
+            hauteur={hauteurHero}
+            grandEcran={grandEcran}
+            padding={padding}
+            accent={accent}
+            encre={encre}
+            densite={d}
             onPress={() => ouvrir(hero.serieId, 'serie')}
-            accessibilityRole="button"
-            accessibilityLabel={`Prochain épisode : ${hero.serieTitre}`}
-          >
-            <Image
-              source={
-                urlFond(hero.cheminAffiche) ? { uri: urlFond(hero.cheminAffiche)! } : undefined
-              }
-              style={styles.heroFond}
-            />
-            <View style={styles.heroVoile} />
-            <View style={[styles.heroPastille, { backgroundColor: accent }]}>
-              <Text style={[styles.heroPastilleTexte, { color: encre }]}>PROCHAIN ÉPISODE</Text>
-            </View>
-            <View style={styles.heroBas}>
-              <Text style={styles.heroTitre} numberOfLines={1}>
-                {hero.serieTitre}
-              </Text>
-              <Text style={styles.heroMeta}>
-                S{hero.saison} E{hero.numero}
-                {hero.nom ? ` · ${hero.nom}` : ''}
-              </Text>
-            </View>
-          </Pressable>
+          />
         ) : null}
 
-        {/* Reprendre (séries en cours) */}
-        {enCours.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.sectionEnTete}>
-              <Text style={styles.titreRang}>Reprendre</Text>
-              <Text style={[styles.sectionCompteur, { color: accent }]}>
-                {enCours.length} en cours
-              </Text>
-            </View>
-            {enCours.map((e) => (
-              <Pressable
-                key={e.id}
-                style={styles.ligne}
-                onPress={() => ouvrir(e.tmdbId, e.type)}
-                accessibilityRole="button"
-                accessibilityLabel={e.titre}
-              >
-                {urlAffiche(e.cheminAffiche, 'w185') ? (
-                  <Image
-                    source={{ uri: urlAffiche(e.cheminAffiche, 'w185')! }}
-                    style={styles.ligneAffiche}
+        <View style={styles.bornes}>
+          {/* Reprendre : la seule section où l'avancement a un sens. */}
+          {enCours.length > 0 ? (
+            <Section
+              titre="Reprendre"
+              compteur={`${enCours.length} en cours`}
+              accent={accent}
+              padding={padding}
+              densite={d}
+            >
+              {enCours.map((e, i) => (
+                <Animated.View
+                  key={e.id}
+                  entering={
+                    staggerArme.current
+                      ? FadeInDown.duration(280).delay(Math.min(i, 8) * 40)
+                      : undefined
+                  }
+                >
+                  <LigneReprendre
+                    entree={e}
+                    avancee={avancees.get(e.tmdbId)}
+                    accent={accent}
+                    densite={d}
+                    padding={padding}
+                    onPress={() => ouvrir(e.tmdbId, e.type)}
                   />
-                ) : (
-                  <View style={styles.ligneAffiche} />
-                )}
-                <View style={styles.ligneInfos}>
-                  <Text style={styles.ligneTitre} numberOfLines={1}>
-                    {e.titre}
-                  </Text>
-                  <Text style={styles.ligneSous}>Série · en cours</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={couleurs.texteDoux} />
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
+                </Animated.View>
+              ))}
+            </Section>
+          ) : null}
 
-        {/* Ta watchlist (à voir) */}
-        {aVoir.length > 0 ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitre}>Ta watchlist</Text>
-            <FlatList
-              data={aVoir}
-              keyExtractor={(item) => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.rail}
-              renderItem={({ item }) => (
-                <CartePoster
-                  titre={versTitre(item)}
-                  largeur={112}
-                  onPress={() => ouvrir(item.tmdbId, item.type)}
-                />
-              )}
-            />
-          </View>
-        ) : null}
+          {aVoir.length > 0 ? (
+            <Section titre="Ta watchlist" accent={accent} padding={padding} densite={d}>
+              <RailPosters
+                donnees={aVoir}
+                largeur={largeurRailPoster}
+                padding={padding}
+                accent={accent}
+                onOuvrir={ouvrir}
+              />
+            </Section>
+          ) : null}
+
+          {termines.length > 0 ? (
+            <Section titre="Vu récemment" accent={accent} padding={padding} densite={d}>
+              <RailPosters
+                donnees={termines.slice(0, 20)}
+                largeur={largeurRailPoster}
+                padding={padding}
+                accent={accent}
+                vu
+                onOuvrir={ouvrir}
+              />
+            </Section>
+          ) : null}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// --- Hero ------------------------------------------------------------------
+
+function Hero({
+  episode,
+  hauteur,
+  grandEcran,
+  padding,
+  accent,
+  encre,
+  densite,
+  onPress,
+}: {
+  episode: ProchainEpisode;
+  hauteur: number;
+  grandEcran: boolean;
+  padding: number;
+  accent: string;
+  encre: string;
+  densite: 'mobile' | 'desktop';
+  onPress: () => void;
+}) {
+  const t = typo(densite);
+  const fond = urlFond(episode.cheminFond, 'w1280') ?? urlAffiche(episode.cheminAffiche, 'w500');
+  const date = new Date(`${episode.dateDiffusion}T00:00:00`).toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Prochain épisode : ${episode.serieTitre}, saison ${episode.saison} épisode ${episode.numero}`}
+      style={[
+        styles.hero,
+        {
+          height: hauteur,
+          // Le bord franc dit « cinéma », le coin arrondi dit « carte ».
+          borderRadius: grandEcran ? 0 : rayons.hero,
+          marginHorizontal: grandEcran ? 0 : padding,
+        },
+      ]}
+    >
+      {fond ? (
+        <Image
+          source={{ uri: fond }}
+          style={StyleSheet.absoluteFill}
+          // Les backdrops TMDb ont l'action dans le tiers haut.
+          contentPosition="top"
+          contentFit="cover"
+          transition={400}
+          cachePolicy="memory-disk"
+          accessible={false}
+        />
+      ) : null}
+
+      {/* Scrim vertical : révèle le bas de l'image plutôt que de délaver l'ensemble. */}
+      <LinearGradient
+        colors={[...fondus.versBas]}
+        locations={[...fondus.positionsVersBas]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {/* Scrim horizontal : assied le texte à gauche, garde l'image vive à droite. */}
+      <LinearGradient
+        colors={[...fondus.versDroite]}
+        locations={[...fondus.positionsVersDroite]}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 0.85, y: 0.5 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      <View style={[styles.heroBas, { padding: grandEcran ? padding : espacements.ml }]}>
+        {/* L'overline en capitales espacées sous un grand titre : le détail le
+            moins cher de la composition éditoriale. */}
+        <Text style={[t.overline, { color: accent }]}>PROCHAIN ÉPISODE · {date.toUpperCase()}</Text>
+        <Text
+          style={[densite === 'desktop' ? t.display : t.h1, styles.heroTitre]}
+          numberOfLines={2}
+        >
+          {episode.serieTitre}
+        </Text>
+        <Text style={[t.bodyStrong, { color: couleurs.texteCorps }]} numberOfLines={1}>
+          S{episode.saison} E{episode.numero}
+          {episode.nom ? ` · ${episode.nom}` : ''}
+        </Text>
+
+        <View style={[styles.heroBtn, { backgroundColor: accent }]}>
+          <Ionicons name="play" size={15} color={encre} />
+          <Text style={[t.label, { color: encre }]}>Voir la série</Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+// --- Sections ---------------------------------------------------------------
+
+function Section({
+  titre,
+  compteur,
+  accent,
+  padding,
+  densite,
+  children,
+}: {
+  titre: string;
+  compteur?: string;
+  accent: string;
+  padding: number;
+  densite: 'mobile' | 'desktop';
+  children: React.ReactNode;
+}) {
+  const t = typo(densite);
+  return (
+    <View style={{ marginTop: densite === 'desktop' ? espacements.section : espacements.xl }}>
+      <View style={[styles.sectionEnTete, { paddingHorizontal: padding }]}>
+        <Text style={[t.h2, { color: couleurs.texte }]}>{titre}</Text>
+        {compteur ? <Text style={[t.caption, { color: accent }]}>{compteur}</Text> : null}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+/** Rail horizontal d'affiches. Full-bleed : il déborde volontairement à droite. */
+function RailPosters({
+  donnees,
+  largeur,
+  padding,
+  accent,
+  vu = false,
+  onOuvrir,
+}: {
+  donnees: EntreeBibliotheque[];
+  largeur: number;
+  padding: number;
+  accent: string;
+  vu?: boolean;
+  onOuvrir: (id: number, type: string) => void;
+}) {
+  return (
+    <FlatList
+      data={donnees}
+      keyExtractor={(item) => item.id}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      // Le padding vertical évite que la carte AGRANDIE au survol soit coupée
+      // par l'overflow du ScrollView (piège réel de react-native-web).
+      contentContainerStyle={{
+        paddingHorizontal: padding,
+        paddingVertical: espacements.sm,
+        gap: espacements.m,
+      }}
+      snapToInterval={largeur + espacements.m}
+      decelerationRate="fast"
+      renderItem={({ item }) => (
+        <CartePoster
+          titre={versTitre(item)}
+          largeur={largeur}
+          accent={accent}
+          vu={vu}
+          onPress={() => onOuvrir(item.tmdbId, item.type)}
+        />
+      )}
+    />
+  );
+}
+
+/** Une ligne « Reprendre » : affiche + titre + avancement. */
+function LigneReprendre({
+  entree,
+  avancee,
+  accent,
+  densite,
+  padding,
+  onPress,
+}: {
+  entree: EntreeBibliotheque;
+  avancee?: AvanceeSerie;
+  accent: string;
+  densite: 'mobile' | 'desktop';
+  padding: number;
+  onPress: () => void;
+}) {
+  const t = typo(densite);
+  const uri = urlAffiche(entree.cheminAffiche, 'w185');
+
+  return (
+    <Pressable
+      style={({ hovered }: EtatPressable) => [
+        styles.ligne,
+        { marginHorizontal: padding },
+        hovered && { backgroundColor: couleurs.surface3, borderColor: couleurs.bordure2 },
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={
+        avancee ? `${entree.titre}, ${avancee.vus} épisodes vus sur ${avancee.total}` : entree.titre
+      }
+    >
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={styles.ligneAffiche}
+          contentFit="cover"
+          transition={220}
+          cachePolicy="memory-disk"
+          accessible={false}
+        />
+      ) : (
+        <View style={styles.ligneAffiche} />
+      )}
+      <View style={styles.ligneInfos}>
+        <Text style={[t.h3, { color: couleurs.texte }]} numberOfLines={1}>
+          {entree.titre}
+        </Text>
+        {avancee ? (
+          <View style={{ marginTop: espacements.s }}>
+            <Progression vus={avancee.vus} total={avancee.total} accent={accent} libelle />
+          </View>
+        ) : (
+          <Text style={[t.caption, { color: couleurs.texteFaible, marginTop: 2 }]}>
+            Série · en cours
+          </Text>
+        )}
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={couleurs.texteFaible} />
+    </Pressable>
+  );
+}
+
+// --- État vide --------------------------------------------------------------
+
+function EtatVide({
+  titre,
+  sous,
+  icone,
+  libelleAction,
+  onAction,
+  accent,
+  encre,
+  enTete,
+  padding,
+  densite,
+}: {
+  titre: string;
+  sous: string;
+  icone: keyof typeof Ionicons.glyphMap;
+  libelleAction: string;
+  onAction: () => void;
+  accent: string;
+  encre: string;
+  enTete: string;
+  padding: number;
+  densite: 'mobile' | 'desktop';
+}) {
+  const t = typo(densite);
+  return (
+    <SafeAreaView style={styles.ecran} edges={['top']}>
+      <Text style={[t.h1, styles.enTete, { paddingHorizontal: padding }]}>{enTete}</Text>
+      <View style={styles.vide}>
+        <View style={[styles.videRond, { borderColor: accent, backgroundColor: `${accent}14` }]}>
+          <Ionicons name={icone} size={44} color={accent} />
+        </View>
+        <Text style={[t.h2, { color: couleurs.texte, marginTop: espacements.l }]}>{titre}</Text>
+        <Text style={[t.body, styles.videSous]}>{sous}</Text>
+        <Pressable
+          style={({ pressed }: EtatPressable) => [
+            styles.videBtn,
+            { backgroundColor: accent, shadowColor: accent },
+            pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+          ]}
+          onPress={onAction}
+          accessibilityRole="button"
+        >
+          <Text style={[t.label, { color: encre }]}>{libelleAction}</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 const styles = StyleSheet.create({
-  ecran: { flex: 1, backgroundColor: couleurs.fond },
-  // Borne la largeur du contenu et le centre (sinon il s'étire sur grand écran).
-  contenu: {
-    paddingBottom: espacements.xl,
-    width: '100%',
-    maxWidth: maxLargeur,
-    alignSelf: 'center',
-  },
-  enTete: {
-    color: couleurs.texte,
-    fontSize: polices.grandTitre,
-    fontFamily: familles.extrabold,
-    paddingHorizontal: espacements.l,
-    paddingTop: espacements.m,
-    marginBottom: espacements.m,
-  },
-  // Hero
+  ecran: { flex: 1, backgroundColor: couleurs.page },
+  contenu: { paddingBottom: espacements.section },
+  // Seul le contenu structuré est borné : le hero et les rails, eux, sont full-bleed.
+  bornes: { width: '100%', maxWidth: maxLargeur, alignSelf: 'center' },
+  enTete: { color: couleurs.texte, paddingTop: espacements.sm, marginBottom: espacements.l },
   hero: {
-    height: 200,
-    marginHorizontal: espacements.l,
-    borderRadius: rayons.hero,
     overflow: 'hidden',
     backgroundColor: couleurs.surface,
     justifyContent: 'flex-end',
   },
-  heroFond: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
-  heroVoile: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(11,14,17,0.45)' },
-  heroPastille: {
-    position: 'absolute',
-    top: espacements.m,
-    left: espacements.m,
-    paddingHorizontal: espacements.s,
-    paddingVertical: 4,
-    borderRadius: rayons.rond,
-  },
-  heroPastilleTexte: { fontSize: 10, fontFamily: familles.extrabold, letterSpacing: 0.5 },
-  heroBas: { padding: espacements.m },
-  heroTitre: { color: couleurs.texte, fontSize: 22, fontFamily: familles.extrabold },
-  heroMeta: {
-    color: couleurs.texteCorps,
-    fontSize: polices.normale,
-    fontFamily: familles.semibold,
-    marginTop: 2,
-  },
-  // Sections
-  section: { marginTop: espacements.xl },
-  sectionEnTete: {
+  heroBas: { maxWidth: 620 },
+  heroTitre: { color: couleurs.texte, marginTop: espacements.xs },
+  heroBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: espacements.s,
+    alignSelf: 'flex-start',
+    marginTop: espacements.m,
+    paddingHorizontal: espacements.ml,
+    height: 44,
+    borderRadius: rayons.rond,
+    // Une seule source de lumière colorée par écran : elle signale l'action.
+    shadowOpacity: 0.32,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  sectionEnTete: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
-    paddingHorizontal: espacements.l,
+    // Serré : le titre et son contenu forment UN groupe. C'est le rapport entre
+    // cet espace (16) et celui qui sépare deux sections (56) qui crée la
+    // structure — à distances égales, tout flotte et rien n'est groupé.
     marginBottom: espacements.m,
   },
-  sectionTitre: {
-    color: couleurs.texte,
-    fontSize: polices.titre,
-    fontFamily: familles.extrabold,
-    paddingHorizontal: espacements.l,
-    marginBottom: espacements.m,
-  },
-  titreRang: { color: couleurs.texte, fontSize: polices.titre, fontFamily: familles.extrabold },
-  sectionCompteur: { fontSize: polices.normale, fontFamily: familles.bold },
-  // Ligne "reprendre"
   ligne: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: espacements.m,
-    marginHorizontal: espacements.l,
-    marginBottom: espacements.s,
-    padding: espacements.s,
+    marginBottom: espacements.sm,
+    padding: espacements.sm,
     backgroundColor: couleurs.surface,
     borderWidth: 1,
     borderColor: couleurs.bordure,
-    borderRadius: rayons.m,
+    // Le liseré clair EN HAUT simule une lumière zénithale : en mode sombre,
+    // c'est lui qui porte l'élévation, pas l'ombre (invisible sur fond noir).
+    borderTopColor: couleurs.lisere,
+    borderRadius: rayons.l,
   },
   ligneAffiche: {
-    width: 46,
-    height: 66,
+    width: 52,
+    height: 78,
     borderRadius: rayons.s,
     backgroundColor: couleurs.surface2,
   },
   ligneInfos: { flex: 1 },
-  ligneTitre: { color: couleurs.texte, fontSize: polices.moyenne, fontFamily: familles.bold },
-  ligneSous: {
-    color: couleurs.texteDoux,
-    fontSize: polices.petite,
-    fontFamily: familles.medium,
-    marginTop: 2,
-  },
-  rail: { paddingHorizontal: espacements.l, gap: espacements.m },
-  // État vide
   vide: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: espacements.xl },
-  videTitre: {
-    color: couleurs.texte,
-    fontSize: polices.titre,
-    fontFamily: familles.bold,
-    marginTop: espacements.m,
+  videRond: {
+    width: 96,
+    height: 96,
+    borderRadius: rayons.rond,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   videSous: {
     color: couleurs.texteDoux,
-    fontSize: polices.normale,
-    fontFamily: familles.medium,
     textAlign: 'center',
     marginTop: espacements.s,
     marginBottom: espacements.l,
-    maxWidth: 300,
+    maxWidth: 380,
   },
   videBtn: {
     paddingHorizontal: espacements.xl,
-    paddingVertical: espacements.m,
+    height: 48,
+    justifyContent: 'center',
     borderRadius: rayons.rond,
+    shadowOpacity: 0.32,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
   },
-  videBtnTexte: { fontSize: polices.moyenne, fontFamily: familles.bold },
 });

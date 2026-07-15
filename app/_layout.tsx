@@ -61,12 +61,24 @@ function Garde() {
 
   // Le <Stack> rend l'écran correspondant à la route courante.
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: couleurs.fond } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: couleurs.page } }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="titre/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="import" options={{ presentation: 'modal' }} />
-      <Stack.Screen name="trakt" options={{ presentation: 'modal' }} />
+      {/* La direction porte du sens : on entre dans un détail par la droite, on
+          ouvre une modale par le bas. (Sans effet sur le web : react-native-web
+          n'anime pas les transitions de native-stack.) */}
+      <Stack.Screen
+        name="titre/[id]"
+        options={{ presentation: 'card', animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
+        name="import"
+        options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen
+        name="trakt"
+        options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+      />
     </Stack>
   );
 }

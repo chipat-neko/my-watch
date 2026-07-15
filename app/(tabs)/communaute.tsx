@@ -7,69 +7,132 @@
 //  honnête plutôt que des données factices.
 // =============================================================================
 
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useVariante } from '@/hooks/useVariante';
-import { couleurs, espacements, familles, maxLargeur, polices } from '@/theme/theme';
+import {
+  conteneurs,
+  couleurs,
+  densiteDe,
+  espacements,
+  largeurRail,
+  paddingEcran,
+  rayons,
+  seuilLarge,
+  typo,
+} from '@/theme/theme';
+
+/** Ce qui arrivera ici, annoncé honnêtement plutôt que simulé. */
+const A_VENIR = [
+  { icone: 'people-outline', titre: 'Le fil de tes amis', sous: 'Ce qu’ils regardent, en direct.' },
+  {
+    icone: 'heart-outline',
+    titre: 'Les « j’aime »',
+    sous: 'Réagis aux épisodes qu’ils terminent.',
+  },
+  {
+    icone: 'sparkles-outline',
+    titre: 'Recommandations',
+    sous: 'Des séries suggérées par tes proches, pas par un algorithme.',
+  },
+] as const;
 
 export default function EcranCommunaute() {
   const { accent } = useVariante();
+  const { width: fenetre } = useWindowDimensions();
+
+  const grandEcran = fenetre >= seuilLarge;
+  const largeurUtile = fenetre - (grandEcran ? largeurRail : 0);
+  const d = densiteDe(largeurUtile);
+  const t = typo(d);
+  const padding = paddingEcran(largeurUtile);
 
   return (
     <SafeAreaView style={styles.ecran} edges={['top']}>
-      <Text style={styles.enTete}>Communauté</Text>
-      <View style={styles.centre}>
-        <View style={[styles.rond, { borderColor: accent }]}>
-          <Ionicons name="people-outline" size={48} color={accent} />
+      <View style={[styles.conteneur, { paddingHorizontal: padding }]}>
+        <Text style={[t.h1, styles.enTete]}>Communauté</Text>
+
+        <View style={styles.centre}>
+          <View style={[styles.rond, { borderColor: accent, backgroundColor: `${accent}14` }]}>
+            <Ionicons name="people-outline" size={44} color={accent} />
+          </View>
+          <Text style={[t.overline, { color: accent, marginTop: espacements.l }]}>
+            PROCHAINEMENT
+          </Text>
+          <Text style={[t.h2, { color: couleurs.texte, marginTop: espacements.xs }]}>
+            Le volet social arrive
+          </Text>
+          <Text style={[t.body, styles.sous]}>
+            My Watch n’a pas encore de back-end social. Plutôt que d’afficher de faux amis, cet
+            onglet reste vide jusqu’à ce que ce soit vrai.
+          </Text>
+
+          <View style={styles.liste}>
+            {A_VENIR.map((item) => (
+              <View key={item.titre} style={styles.item}>
+                <View style={styles.itemIcone}>
+                  <Ionicons name={item.icone} size={19} color={accent} />
+                </View>
+                <View style={styles.itemTexte}>
+                  <Text style={[t.h3, { color: couleurs.texte }]}>{item.titre}</Text>
+                  <Text style={[t.caption, { color: couleurs.texteFaible, marginTop: 2 }]}>
+                    {item.sous}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
-        <Text style={styles.titre}>Bientôt disponible</Text>
-        <Text style={styles.sous}>
-          Le fil d'actu de tes amis, les « j'aime » et les recommandations sociales arrivent dans
-          une prochaine version.
-        </Text>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  ecran: {
+  ecran: { flex: 1, backgroundColor: couleurs.fond },
+  conteneur: { flex: 1, width: '100%', maxWidth: conteneurs.standard, alignSelf: 'center' },
+  enTete: { color: couleurs.texte, paddingTop: espacements.sm },
+  centre: {
     flex: 1,
-    backgroundColor: couleurs.fond,
-    width: '100%',
-    maxWidth: maxLargeur,
-    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: espacements.xxl,
   },
-  enTete: {
-    color: couleurs.texte,
-    fontSize: polices.grandTitre,
-    fontFamily: familles.extrabold,
-    paddingHorizontal: espacements.l,
-    paddingTop: espacements.m,
-  },
-  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: espacements.xl },
   rond: {
     width: 96,
     height: 96,
-    borderRadius: 999,
-    borderWidth: 2,
+    borderRadius: rayons.rond,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: espacements.l,
-  },
-  titre: {
-    color: couleurs.texte,
-    fontSize: polices.titre,
-    fontFamily: familles.bold,
-    marginBottom: espacements.s,
   },
   sous: {
     color: couleurs.texteDoux,
-    fontSize: polices.normale,
-    fontFamily: familles.medium,
     textAlign: 'center',
-    lineHeight: 20,
-    maxWidth: 320,
+    marginTop: espacements.s,
+    // ~65 caractères par ligne : au-delà, l'œil perd la ligne au retour chariot.
+    maxWidth: 420,
   },
+  liste: { marginTop: espacements.section, gap: espacements.sm, width: '100%', maxWidth: 420 },
+  item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.m,
+    backgroundColor: couleurs.surface,
+    borderWidth: 1,
+    borderColor: couleurs.bordure,
+    borderTopColor: couleurs.lisere,
+    borderRadius: rayons.l,
+    padding: espacements.m,
+  },
+  itemIcone: {
+    width: 40,
+    height: 40,
+    borderRadius: rayons.s,
+    backgroundColor: couleurs.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemTexte: { flex: 1 },
 });
