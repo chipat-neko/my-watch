@@ -72,6 +72,10 @@ function Garde() {
         options={{ presentation: 'card', animation: 'slide_from_right' }}
       />
       <Stack.Screen
+        name="historique"
+        options={{ presentation: 'card', animation: 'slide_from_right' }}
+      />
+      <Stack.Screen
         name="import"
         options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
       />

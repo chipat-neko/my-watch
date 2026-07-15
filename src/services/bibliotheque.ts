@@ -26,6 +26,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   getCountFromServer,
 } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -175,6 +176,19 @@ export async function episodesVusParSerie(): Promise<Map<number, EpisodeVu[]>> {
     else parSerie.set(vu.serieId, [vu]);
   }
   return parSerie;
+}
+
+/**
+ * Tous les épisodes vus, du plus récent au plus ancien, pour le journal.
+ *
+ * `orderBy` côté serveur plutôt qu'un tri local : Firestore sait le faire sans
+ * index composite (un seul champ), et cela permettra de paginer le jour où
+ * l'historique deviendra long.
+ */
+export async function historiqueEpisodes(limite = 300): Promise<EpisodeVu[]> {
+  const uid = idUtilisateur();
+  const snap = await getDocs(query(refEpisodes(uid), orderBy('vuLe', 'desc'), limit(limite)));
+  return snap.docs.map((d) => versEpisodeVu(d.id, d.data()));
 }
 
 /** Récupère les épisodes vus d'une série. */

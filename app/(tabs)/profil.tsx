@@ -251,6 +251,15 @@ export default function EcranProfil() {
         </View>
 
         <Action
+          icone="time-outline"
+          titre="Mon historique"
+          sous="Tout ce que tu as vu, jour par jour"
+          accent={accent}
+          densite={d}
+          onPress={() => router.push('/historique')}
+        />
+
+        <Action
           icone="cloud-upload-outline"
           titre="Importer mon historique"
           sous="Depuis un export Netflix ou TV Time (CSV)"
