@@ -32,6 +32,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CartePoster } from '@/components/CartePoster';
+import { Fil } from '@/components/accueil/Fil';
+import { Mosaique } from '@/components/accueil/Mosaique';
 import { FondAmbiance } from '@/components/FondAmbiance';
 import { Progression } from '@/components/Progression';
 import { GrilleSquelettes, LignesSquelettes, Squelette } from '@/components/Squelette';
@@ -307,6 +309,48 @@ export default function EcranAccueil() {
     );
   }
 
+  // --- Apparence « Grille » : une mosaïque, sans hero ni sections ------------
+  // Le choix d'apparence doit changer la STRUCTURE de l'écran, pas seulement sa
+  // couleur : ici, on renonce au récit (hero, titres de section, libellés) au
+  // profit de la densité. Tout est dans l'affiche.
+  if (variante === 'grid') {
+    return (
+      <Mosaique
+        enCours={enCours}
+        aVoir={aVoir}
+        termines={termines}
+        avancees={avancees}
+        accent={accent}
+        densite={d}
+        padding={padding}
+        largeurUtile={largeurUtile}
+        titreEcran={titreEcran}
+        staggerArme={staggerArme.current}
+        onOuvrir={ouvrir}
+      />
+    );
+  }
+
+  // --- Apparence « Social » : un fil vertical de grandes cartes --------------
+  if (variante === 'social') {
+    return (
+      <Fil
+        enCours={enCours}
+        aVoir={aVoir}
+        avancees={avancees}
+        accent={accent}
+        encre={encre}
+        densite={d}
+        padding={padding}
+        titreEcran={titreEcran}
+        staggerArme={staggerArme.current}
+        onOuvrir={ouvrir}
+        onMarquerVu={marquerProchainVu}
+      />
+    );
+  }
+
+  // --- Apparence « Classique » : hero éditorial + sections -------------------
   return (
     <SafeAreaView style={styles.ecran} edges={['top']}>
       <ScrollView contentContainerStyle={styles.contenu} showsVerticalScrollIndicator={false}>
