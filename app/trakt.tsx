@@ -7,10 +7,10 @@
 // =============================================================================
 
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useRouter } from 'expo-router';
-import * as Linking from 'expo-linking';
+import { copierTexte, ouvrirLien } from '@/lib/lien';
 import { Ionicons } from '@expo/vector-icons';
 import { Chargement } from '@/components/Chargement';
 import { attendre } from '@/services/async';
@@ -26,6 +26,7 @@ import {
   ResultatSyncTrakt,
 } from '@/services/trakt';
 import { useVariante } from '@/hooks/useVariante';
+import { EtatPressable } from '@/types';
 import { couleurs, espacements, familles, polices, rayons } from '@/theme/theme';
 
 export default function EcranTrakt() {
@@ -38,6 +39,8 @@ export default function EcranTrakt() {
   const [statut, setStatut] = useState<string | null>(null);
   const [progression, setProgression] = useState<{ fait: number; total: number } | null>(null);
   const [resultat, setResultat] = useState<ResultatSyncTrakt | null>(null);
+  /** Confirme la copie du code : sans retour, on ne sait pas si le clic a agi. */
+  const [copie, setCopie] = useState(false);
 
   useEffect(() => {
     estConnecteTrakt().then((c) => {
@@ -97,11 +100,32 @@ export default function EcranTrakt() {
     try {
       const c = await demarrerAppairage();
       setCode(c);
-      setStatut(`Ouvre ${c.url} et saisis le code ci-dessous.`);
-      Linking.openURL(c.url).catch(() => {});
+      // On N'OUVRE PAS Trakt ici. Deux raisons :
+      //  - sur le web, l'ancien appel remplaçait la page courante : le code
+      //    disparaissait à l'instant même où il fallait le lire ;
+      //  - un `window.open` qui suit un `await` est bloqué par le navigateur,
+      //    le geste de l'utilisateur n'étant plus le déclencheur direct.
+      // Le code s'affiche, et un bouton ouvre Trakt dans un nouvel onglet.
     } catch {
       setStatut('Impossible de démarrer la connexion Trakt.');
     }
+  }
+
+  /** Ouvre trakt.tv/activate dans un nouvel onglet (web) ou le navigateur (natif). */
+  async function ouvrirTrakt(url: string) {
+    try {
+      await ouvrirLien(url);
+    } catch {
+      // Onglet bloqué : l'adresse reste affichée en clair, à recopier.
+      setStatut(`Ouvre ${url} à la main, puis saisis le code.`);
+    }
+  }
+
+  /** Copie le code d'appairage : il est plus sûr de le coller que de le retaper. */
+  async function copierCode(userCode: string) {
+    const r = await copierTexte(userCode);
+    setCopie(r);
+    if (r) setTimeout(() => setCopie(false), 2500);
   }
 
   async function lancerSync() {
@@ -162,7 +186,7 @@ export default function EcranTrakt() {
             </Text>
 
             <Pressable
-              onPress={() => Linking.openURL('https://trakt.tv/oauth/applications/new')}
+              onPress={() => ouvrirTrakt('https://trakt.tv/oauth/applications/new')}
               accessibilityRole="link"
               style={[styles.bouton, { marginTop: espacements.s }]}
             >
@@ -172,8 +196,8 @@ export default function EcranTrakt() {
 
             <Text style={styles.etapeTitre}>2. Colle les deux clés</Text>
             <Text style={styles.aide}>
-              Trakt affiche un « Client ID » et un « Client Secret » : deux longues suites de 64
-              caractères. Copie-les dans le fichier .env, à la place de
+              Trakt affiche un « Client ID » et un « Client Secret » : deux longues suites de
+              lettres et de chiffres. Copie-les dans le fichier .env, à la place de
               colle_ici_ton_client_id_trakt :
             </Text>
             <View style={styles.bloc}>
@@ -230,9 +254,54 @@ export default function EcranTrakt() {
           </View>
         ) : code ? (
           <View style={styles.apercu}>
-            <Text style={styles.aide}>Sur {code.url}, saisis ce code :</Text>
-            <Text style={[styles.codeAppairage, { color: accent }]}>{code.userCode}</Text>
-            <Text style={styles.aide}>En attente d'autorisation…</Text>
+            <Text style={styles.etapeTitre}>1. Note ce code</Text>
+            {/* Le code reste à l'écran : Trakt s'ouvre dans un AUTRE onglet, on
+                peut donc revenir le lire. Avant, la page était remplacée et le
+                code disparaissait au moment précis où il servait. */}
+            <Pressable
+              onPress={() => copierCode(code.userCode)}
+              accessibilityRole="button"
+              accessibilityLabel={`Copier le code ${code.userCode.split('').join(' ')}`}
+              style={({ hovered }: EtatPressable) => [
+                styles.codeBloc,
+                { borderColor: copie ? accent : couleurs.bordure2 },
+                hovered && { borderColor: accent },
+              ]}
+            >
+              <Text style={[styles.codeAppairage, { color: accent }]}>{code.userCode}</Text>
+              <View style={styles.copier}>
+                <Ionicons
+                  name={copie ? 'checkmark' : 'copy-outline'}
+                  size={15}
+                  color={copie ? accent : couleurs.texteFaible}
+                />
+                <Text style={[styles.copierTexte, copie ? { color: accent } : null]}>
+                  {copie ? 'Copié' : 'Copier'}
+                </Text>
+              </View>
+            </Pressable>
+
+            <Text style={styles.etapeTitre}>2. Saisis-le sur Trakt</Text>
+            <Text style={styles.aide}>
+              Le site s’ouvre dans un nouvel onglet ; cette page reste ouverte et se connectera
+              toute seule.
+            </Text>
+            <Pressable
+              onPress={() => ouvrirTrakt(code.url)}
+              accessibilityRole="link"
+              style={[
+                styles.bouton,
+                { backgroundColor: accent, shadowColor: accent, marginTop: espacements.s },
+              ]}
+            >
+              <Ionicons name="open-outline" size={18} color={encre} />
+              <Text style={[styles.boutonTexte, { color: encre }]}>Ouvrir {code.url}</Text>
+            </Pressable>
+
+            <View style={styles.attente}>
+              <ActivityIndicator size="small" color={couleurs.texteFaible} />
+              <Text style={styles.aide}>En attente de ton autorisation…</Text>
+            </View>
           </View>
         ) : (
           <Pressable
@@ -314,6 +383,28 @@ const styles = StyleSheet.create({
   },
   // Chasse fixe : une clé se recopie caractère par caractère.
   code: { color: couleurs.texteCorps, fontSize: 12, fontFamily: 'monospace' },
+  codeBloc: {
+    alignItems: 'center',
+    backgroundColor: couleurs.surface2,
+    borderWidth: 1.5,
+    borderRadius: rayons.m,
+    paddingVertical: espacements.m,
+    marginTop: espacements.s,
+    cursor: 'pointer',
+  },
+  copier: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.xs,
+    marginTop: espacements.xs,
+  },
+  copierTexte: { color: couleurs.texteFaible, fontSize: 11, fontFamily: familles.semibold },
+  attente: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.s,
+    marginTop: espacements.l,
+  },
   apercu: {
     backgroundColor: couleurs.surface,
     borderRadius: rayons.l,
