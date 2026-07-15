@@ -96,7 +96,18 @@ export default function EcranDecouvrir() {
   }, [texte]);
 
   function ouvrir(titre: Titre) {
-    router.push({ pathname: '/titre/[id]', params: { id: String(titre.id), type: titre.type } });
+    router.push({
+      pathname: '/titre/[id]',
+      params: {
+        id: String(titre.id),
+        type: titre.type,
+        // Transmis pour que le détail affiche le titre et l'affiche SANS attendre
+        // TMDb : l'image est déjà en cache, donc l'élément touché « suit »
+        // l'utilisateur au lieu de disparaître derrière un écran de chargement.
+        nom: titre.titre,
+        affiche: titre.cheminAffiche ?? '',
+      },
+    });
   }
 
   const enRecherche = texte.trim().length >= 2;

@@ -243,6 +243,8 @@ export interface Statistiques {
   nbSeries: number;
   nbFilms: number;
   nbEpisodesVus: number;
+  /** Titres au statut « terminé » (déjà dans la bibliothèque chargée : gratuit). */
+  nbTermines: number;
 }
 
 /**
@@ -258,5 +260,6 @@ export async function statistiques(): Promise<Statistiques> {
     nbSeries: biblio.filter((e) => e.type === 'serie').length,
     nbFilms: biblio.filter((e) => e.type === 'film').length,
     nbEpisodesVus: compte.data().count,
+    nbTermines: biblio.filter((e) => e.statut === 'termine').length,
   };
 }

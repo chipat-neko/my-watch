@@ -22,10 +22,12 @@ import * as DocumentPicker from 'expo-document-picker';
 import { lireFichierTexte } from '@/lib/fichier';
 import { analyserCsv, importer, ResultatImport } from '@/services/import';
 import { LigneImport } from '@/types';
-import { couleurs, espacements, polices, rayons } from '@/theme/theme';
+import { useVariante } from '@/hooks/useVariante';
+import { couleurs, espacements, familles, polices, rayons } from '@/theme/theme';
 
 export default function EcranImport() {
   const router = useRouter();
+  const { accent, encre } = useVariante();
   const [lignes, setLignes] = useState<LigneImport[]>([]);
   const [nomFichier, setNomFichier] = useState<string | null>(null);
   const [progression, setProgression] = useState<{ fait: number; total: number } | null>(null);
@@ -107,13 +109,19 @@ export default function EcranImport() {
             </Text>
 
             <Pressable
-              style={[styles.bouton, styles.boutonAccent]}
+              style={[
+                styles.bouton,
+                styles.boutonAccent,
+                { backgroundColor: accent, shadowColor: accent },
+              ]}
               onPress={lancerImport}
               disabled={progression !== null}
               accessibilityRole="button"
               accessibilityState={{ disabled: progression !== null }}
             >
-              <Text style={styles.boutonTexte}>
+              {/* `encre` et non blanc : le blanc sur l'accent turquoise échoue au
+                  rapport de contraste de 4,5:1. */}
+              <Text style={[styles.boutonTexte, { color: encre }]}>
                 {progression
                   ? `Import… ${progression.fait}/${progression.total}`
                   : `Importer ${lignes.length} titre(s)`}
@@ -134,11 +142,15 @@ export default function EcranImport() {
                 : ''}
             </Text>
             <Pressable
-              style={[styles.bouton, styles.boutonAccent]}
+              style={[
+                styles.bouton,
+                styles.boutonAccent,
+                { backgroundColor: accent, shadowColor: accent },
+              ]}
               onPress={() => router.back()}
               accessibilityRole="button"
             >
-              <Text style={styles.boutonTexte}>Terminer</Text>
+              <Text style={[styles.boutonTexte, { color: encre }]}>Terminer</Text>
             </Pressable>
           </View>
         ) : null}
@@ -155,7 +167,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: espacements.m,
   },
-  titre: { color: couleurs.texte, fontSize: polices.titre, fontWeight: '800' },
+  titre: { color: couleurs.texte, fontSize: polices.titre, fontFamily: familles.extrabold },
   contenu: { padding: espacements.m },
   aide: {
     color: couleurs.texteDoux,
@@ -172,10 +184,16 @@ const styles = StyleSheet.create({
     paddingVertical: espacements.m,
     marginTop: espacements.s,
   },
-  boutonAccent: { backgroundColor: couleurs.accent, marginTop: espacements.l },
+  boutonAccent: {
+    marginTop: espacements.l,
+    shadowOpacity: 0.32,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
   boutonTexte: {
     color: couleurs.texte,
-    fontWeight: '700',
+    fontFamily: familles.bold,
     fontSize: polices.moyenne,
     marginLeft: espacements.s,
   },
@@ -190,7 +208,7 @@ const styles = StyleSheet.create({
   apercuTitre: {
     color: couleurs.texte,
     fontSize: polices.moyenne,
-    fontWeight: '700',
+    fontFamily: familles.bold,
     marginTop: espacements.s,
   },
   apercuTexte: {

@@ -18,10 +18,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/hooks/useAuth';
-import { couleurs, espacements, polices, rayons } from '@/theme/theme';
+import { useVariante } from '@/hooks/useVariante';
+import { couleurs, espacements, familles, polices, rayons } from '@/theme/theme';
 
 export default function EcranConnexion() {
   const { seConnecter, sInscrire } = useAuth();
+  // La variante est un choix local (AsyncStorage) : elle est donc déjà connue
+  // avant même d'être connecté.
+  const { accent, encre } = useVariante();
 
   // Mode courant : true = inscription, false = connexion.
   const [modeInscription, setModeInscription] = useState(false);
@@ -66,7 +70,7 @@ export default function EcranConnexion() {
         style={styles.centre}
       >
         {/* En-tête */}
-        <Text style={styles.logo}>My Watch</Text>
+        <Text style={[styles.logo, { color: accent }]}>My Watch</Text>
         <Text style={styles.sousTitre}>Suis tes séries et films, sans rien oublier.</Text>
 
         {/* Formulaire */}
@@ -97,7 +101,7 @@ export default function EcranConnexion() {
 
         {/* Bouton principal */}
         <Pressable
-          style={styles.bouton}
+          style={[styles.bouton, { backgroundColor: accent, shadowColor: accent }]}
           onPress={valider}
           disabled={enCours}
           accessibilityRole="button"
@@ -105,9 +109,11 @@ export default function EcranConnexion() {
           accessibilityLabel={modeInscription ? "S'inscrire" : 'Se connecter'}
         >
           {enCours ? (
-            <ActivityIndicator color={couleurs.texte} />
+            <ActivityIndicator color={encre} />
           ) : (
-            <Text style={styles.boutonTexte}>
+            // `encre` et non blanc : du blanc sur le turquoise d'accent échoue au
+            // rapport de contraste de 4,5:1.
+            <Text style={[styles.boutonTexte, { color: encre }]}>
               {modeInscription ? "S'inscrire" : 'Se connecter'}
             </Text>
           )}
@@ -142,48 +148,62 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: espacements.l,
+    // Sans cette borne, les champs et le bouton s'étirent sur toute la largeur
+    // d'un écran de bureau : un formulaire de 1600px de large est le signe le
+    // plus immédiat d'une application mobile étirée.
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
   },
   logo: {
-    color: couleurs.accent,
-    fontSize: polices.grandTitre,
-    fontWeight: '800',
+    fontSize: 34,
+    fontFamily: familles.extrabold,
+    letterSpacing: -1.2,
     textAlign: 'center',
   },
   sousTitre: {
     color: couleurs.texteDoux,
-    fontSize: polices.normale,
+    fontSize: polices.moyenne,
+    fontFamily: familles.medium,
     textAlign: 'center',
     marginTop: espacements.s,
     marginBottom: espacements.xl,
   },
   champ: {
-    backgroundColor: couleurs.surface,
+    backgroundColor: couleurs.surface2,
     color: couleurs.texte,
     borderRadius: rayons.m,
     paddingHorizontal: espacements.m,
-    paddingVertical: espacements.m,
-    marginBottom: espacements.m,
+    height: 52,
+    marginBottom: espacements.sm,
     fontSize: polices.moyenne,
+    fontFamily: familles.medium,
     borderWidth: 1,
-    borderColor: couleurs.bordure,
+    borderColor: couleurs.bordure2,
+    borderTopColor: couleurs.lisere,
   },
   bouton: {
-    backgroundColor: couleurs.accent,
-    borderRadius: rayons.m,
-    paddingVertical: espacements.m,
+    borderRadius: rayons.rond,
+    height: 52,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: espacements.s,
+    // Une seule source lumineuse par écran : elle désigne l'action.
+    shadowOpacity: 0.32,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
   boutonTexte: {
-    color: couleurs.texte,
     fontSize: polices.moyenne,
-    fontWeight: '700',
+    fontFamily: familles.bold,
   },
   bascule: {
     color: couleurs.texteDoux,
     textAlign: 'center',
     marginTop: espacements.l,
     fontSize: polices.normale,
+    fontFamily: familles.medium,
   },
   erreur: {
     color: couleurs.accentRose,

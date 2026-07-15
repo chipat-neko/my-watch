@@ -25,10 +25,12 @@ import {
   EtatSondage,
   ResultatSyncTrakt,
 } from '@/services/trakt';
-import { couleurs, espacements, polices, rayons } from '@/theme/theme';
+import { useVariante } from '@/hooks/useVariante';
+import { couleurs, espacements, familles, polices, rayons } from '@/theme/theme';
 
 export default function EcranTrakt() {
   const router = useRouter();
+  const { accent, encre } = useVariante();
   const [configure] = useState(traktConfigure());
   const [connecte, setConnecte] = useState(false);
   const [chargement, setChargement] = useState(true);
@@ -154,13 +156,19 @@ export default function EcranTrakt() {
               (séries, films) et tes notes.
             </Text>
             <Pressable
-              style={[styles.bouton, styles.boutonAccent]}
+              style={[
+                styles.bouton,
+                styles.boutonAccent,
+                { backgroundColor: accent, shadowColor: accent },
+              ]}
               onPress={lancerSync}
               disabled={progression !== null}
               accessibilityRole="button"
               accessibilityState={{ disabled: progression !== null }}
             >
-              <Text style={styles.boutonTexte}>
+              {/* `encre` et non blanc : le blanc sur l'accent turquoise échoue au
+                  rapport de contraste de 4,5:1. */}
+              <Text style={[styles.boutonTexte, { color: encre }]}>
                 {progression
                   ? progression.total
                     ? `Synchronisation… ${progression.fait}/${progression.total}`
@@ -183,16 +191,20 @@ export default function EcranTrakt() {
         ) : code ? (
           <View style={styles.apercu}>
             <Text style={styles.aide}>Sur {code.url}, saisis ce code :</Text>
-            <Text style={styles.codeAppairage}>{code.userCode}</Text>
+            <Text style={[styles.codeAppairage, { color: accent }]}>{code.userCode}</Text>
             <Text style={styles.aide}>En attente d'autorisation…</Text>
           </View>
         ) : (
           <Pressable
-            style={[styles.bouton, styles.boutonAccent]}
+            style={[
+              styles.bouton,
+              styles.boutonAccent,
+              { backgroundColor: accent, shadowColor: accent },
+            ]}
             onPress={connecter}
             accessibilityRole="button"
           >
-            <Text style={styles.boutonTexte}>Connecter mon compte Trakt</Text>
+            <Text style={[styles.boutonTexte, { color: encre }]}>Connecter mon compte Trakt</Text>
           </Pressable>
         )}
 
@@ -210,7 +222,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: espacements.m,
   },
-  titre: { color: couleurs.texte, fontSize: polices.titre, fontWeight: '800' },
+  titre: { color: couleurs.texte, fontSize: polices.titre, fontFamily: familles.extrabold },
   contenu: { padding: espacements.m },
   aide: {
     color: couleurs.texteDoux,
@@ -227,8 +239,13 @@ const styles = StyleSheet.create({
     paddingVertical: espacements.m,
     marginTop: espacements.m,
   },
-  boutonAccent: { backgroundColor: couleurs.accent },
-  boutonTexte: { color: couleurs.texte, fontWeight: '700', fontSize: polices.moyenne },
+  boutonAccent: {
+    shadowOpacity: 0.32,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  boutonTexte: { color: couleurs.texte, fontFamily: familles.bold, fontSize: polices.moyenne },
   apercu: {
     backgroundColor: couleurs.surface,
     borderRadius: rayons.l,
@@ -237,11 +254,13 @@ const styles = StyleSheet.create({
     marginTop: espacements.m,
   },
   codeAppairage: {
-    color: couleurs.accent,
-    fontSize: polices.grandTitre,
-    fontWeight: '800',
+    fontSize: 34,
+    fontFamily: familles.extrabold,
     letterSpacing: 4,
     marginVertical: espacements.m,
+    // Chiffres à chasse fixe : un code d'appairage qui gigote pendant qu'on le
+    // recopie est pénible.
+    fontVariant: ['tabular-nums'],
   },
   statut: { color: couleurs.texteDoux, fontSize: polices.normale, marginTop: espacements.l },
 });

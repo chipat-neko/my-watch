@@ -6,13 +6,18 @@
 //    - voir sur quelles plateformes le regarder ("Où regarder")
 //    - (séries) parcourir les saisons et cocher les épisodes vus
 //
-//  Les paramètres d'URL "id" et "type" sont fournis par la navigation
-//  (voir router.push({ pathname: '/titre/[id]', params: { id, type } })).
+//  Les paramètres d'URL "id" et "type" sont fournis par la navigation. On y
+//  transmet aussi le titre et l'affiche déjà connus de l'écran appelant : ils
+//  s'affichent IMMÉDIATEMENT pendant que TMDb répond, de sorte que l'élément
+//  touché « suit » l'utilisateur au lieu de disparaître derrière un spinner.
 // =============================================================================
 
-import { useCallback, useEffect, useState } from 'react';
-import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { detailsTitre, ouRegarder, episodesSaison } from '@/lib/tmdb';
@@ -27,11 +32,23 @@ import {
   demarquerEpisode,
   noterEpisode,
 } from '@/services/bibliotheque';
-import { Chargement } from '@/components/Chargement';
+import { CocheVu } from '@/components/CocheVu';
 import { Etoiles } from '@/components/Etoiles';
-import { Titre, Episode, StatutSuivi, TypeMedia, EntreeBibliotheque } from '@/types';
-import { urlFond, nomsGenres } from '@/theme/constantes';
-import { couleurs, espacements, polices, rayons } from '@/theme/theme';
+import { Progression } from '@/components/Progression';
+import { LignesSquelettes, Squelette } from '@/components/Squelette';
+import { useVariante } from '@/hooks/useVariante';
+import { Titre, Episode, EtatPressable, StatutSuivi, TypeMedia, EntreeBibliotheque } from '@/types';
+import { urlAffiche, urlFond, nomsGenres } from '@/theme/constantes';
+import {
+  conteneurs,
+  couleurs,
+  densiteDe,
+  espacements,
+  fondus,
+  paddingEcran,
+  rayons,
+  typo,
+} from '@/theme/theme';
 
 const STATUTS: { libelle: string; valeur: StatutSuivi }[] = [
   { libelle: 'À voir', valeur: 'a_voir' },
@@ -41,10 +58,21 @@ const STATUTS: { libelle: string; valeur: StatutSuivi }[] = [
 
 export default function EcranDetail() {
   // Récupération et typage des paramètres d'URL.
-  const params = useLocalSearchParams<{ id: string; type: TypeMedia }>();
+  const params = useLocalSearchParams<{
+    id: string;
+    type: TypeMedia;
+    nom?: string;
+    affiche?: string;
+  }>();
   const id = Number(params.id);
   const type: TypeMedia = params.type === 'film' ? 'film' : 'serie';
   const router = useRouter();
+  const { accent, encre } = useVariante();
+  const { width: fenetre } = useWindowDimensions();
+
+  const d = densiteDe(fenetre);
+  const t = typo(d);
+  const padding = paddingEcran(fenetre);
 
   const [titre, setTitre] = useState<Titre | null>(null);
   const [plateformes, setPlateformes] = useState<string[]>([]);
@@ -114,7 +142,15 @@ export default function EcranDetail() {
     setEntree({ ...entree, notePerso: note });
   }
 
-  if (chargement || !titre) return <Chargement message="Chargement du titre…" />;
+  // Le titre et l'affiche transmis par l'écran appelant tiennent lieu de
+  // contenu tant que TMDb n'a pas répondu : l'affiche est déjà dans le cache
+  // image, donc il n'y a aucun clignotement.
+  const nomAffiche = titre?.titre ?? params.nom ?? '';
+  const fond =
+    urlFond(titre?.cheminFond ?? null, 'w1280') ??
+    urlAffiche(titre?.cheminAffiche ?? params.affiche ?? null, 'w500');
+
+  const hauteurFond = d === 'desktop' ? Math.round(Math.min(480, fenetre * 0.3)) : 260;
 
   return (
     <SafeAreaView style={styles.ecran} edges={['bottom']}>
@@ -122,115 +158,169 @@ export default function EcranDetail() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Image de fond + dégradé + bouton retour */}
-        <ImageBackground
-          source={urlFond(titre.cheminFond) ? { uri: urlFond(titre.cheminFond)! } : undefined}
-          style={styles.fond}
-        >
-          <View style={styles.voile} />
+        <View style={{ height: hauteurFond }}>
+          {fond ? (
+            <Image
+              source={{ uri: fond }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              contentPosition="top"
+              transition={300}
+              cachePolicy="memory-disk"
+              accessible={false}
+            />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: couleurs.surface2 }]} />
+          )}
+          {/* Fondu vers le fond de page : le backdrop ne s'arrête pas, il se dissout. */}
+          <LinearGradient
+            colors={[...fondus.versBas]}
+            locations={[...fondus.positionsVersBas]}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+          <LinearGradient
+            colors={['rgba(11,14,17,0.7)', 'rgba(11,14,17,0)']}
+            style={styles.voileHaut}
+            pointerEvents="none"
+          />
           <Pressable
-            style={styles.retour}
+            style={({ hovered }: EtatPressable) => [
+              styles.retour,
+              { margin: padding },
+              hovered && { backgroundColor: 'rgba(11,14,17,0.85)' },
+            ]}
             onPress={() => router.back()}
             accessibilityRole="button"
             accessibilityLabel="Revenir en arrière"
           >
-            <Ionicons name="chevron-back" size={26} color={couleurs.texte} />
+            <Ionicons name="chevron-back" size={24} color={couleurs.texte} />
           </Pressable>
-        </ImageBackground>
+        </View>
 
-        <View style={styles.corps}>
-          <Text style={styles.titre}>{titre.titre}</Text>
+        {/* Le corps remonte sur le backdrop : la couture disparaît. */}
+        <View style={[styles.corps, { paddingHorizontal: padding }]}>
+          <Text style={[d === 'desktop' ? t.display : t.h1, { color: couleurs.texte }]}>
+            {nomAffiche}
+          </Text>
 
-          {/* Note + genres */}
-          <View style={styles.metaLigne}>
-            <Ionicons name="star" size={16} color={couleurs.note} />
-            <Text style={styles.note}>{titre.note.toFixed(1)}</Text>
-            <Text style={styles.genres}>{nomsGenres(titre.genres).slice(0, 3).join(' · ')}</Text>
-          </View>
-
-          {/* Boutons de statut */}
-          <View style={styles.statuts}>
-            {STATUTS.map((s) => {
-              const actif = entree?.statut === s.valeur;
-              return (
-                <Pressable
-                  key={s.valeur}
-                  onPress={() => appliquerStatut(s.valeur)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: actif }}
-                  accessibilityLabel={`Statut : ${s.libelle}`}
-                  style={[styles.statutBtn, actif && styles.statutBtnActif]}
-                >
-                  <Text style={[styles.statutTexte, actif && styles.statutTexteActif]}>
-                    {s.libelle}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {/* Ma note (titre suivi) */}
-          {entree ? (
-            <View style={styles.noteBloc}>
-              <Text style={styles.noteLabel}>Ma note</Text>
-              <Etoiles note={entree.notePerso} onChange={noterTitre} />
+          {chargement || !titre ? (
+            <View style={{ marginTop: espacements.m, gap: espacements.s }}>
+              <Squelette largeur="40%" hauteur={16} rayon={rayons.s} />
+              <Squelette largeur="100%" hauteur={48} rayon={rayons.m} />
             </View>
-          ) : null}
-
-          {entree ? (
-            <Pressable
-              onPress={retirer}
-              accessibilityRole="button"
-              accessibilityLabel="Retirer de ma liste"
-              style={styles.retirer}
-            >
-              <Ionicons name="trash-outline" size={16} color={couleurs.accentRose} />
-              <Text style={styles.retirerTexte}>Retirer de ma liste</Text>
-            </Pressable>
-          ) : null}
-
-          {/* Date de visionnage (pour un titre terminé) */}
-          {entree?.statut === 'termine' && entree.vuLe ? (
-            <Text style={styles.vuLe}>
-              Vu le{' '}
-              {new Date(entree.vuLe).toLocaleDateString('fr-FR', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </Text>
-          ) : null}
-
-          {/* Où regarder */}
-          {plateformes.length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitre}>Où regarder</Text>
-              <View style={styles.chips}>
-                {plateformes.map((p) => (
-                  <View key={p} style={styles.chip}>
-                    <Text style={styles.chipTexte}>{p}</Text>
-                  </View>
-                ))}
+          ) : (
+            <>
+              {/* Méta : note, année, genres — en capitales espacées. */}
+              <View style={styles.metaLigne}>
+                <Ionicons name="star" size={14} color={couleurs.note} />
+                <Text style={[styles.note, { color: couleurs.note }]}>{titre.note.toFixed(1)}</Text>
+                <Text style={[t.overline, { color: couleurs.texteDoux }]}>
+                  {[
+                    titre.dateSortie ? titre.dateSortie.slice(0, 4) : null,
+                    type === 'film' ? 'FILM' : 'SÉRIE',
+                    nomsGenres(titre.genres).slice(0, 2).join(' · ').toUpperCase(),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
               </View>
-            </View>
-          ) : null}
 
-          {/* Synopsis */}
-          {titre.synopsis ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitre}>Synopsis</Text>
-              <Text style={styles.synopsis}>{titre.synopsis}</Text>
-            </View>
-          ) : null}
+              {/* Boutons de statut */}
+              <View style={styles.statuts}>
+                {STATUTS.map((s) => {
+                  const actif = entree?.statut === s.valeur;
+                  return (
+                    <Pressable
+                      key={s.valeur}
+                      onPress={() => appliquerStatut(s.valeur)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: actif }}
+                      accessibilityLabel={`Statut : ${s.libelle}`}
+                      style={({ hovered, pressed }: EtatPressable) => [
+                        styles.statutBtn,
+                        actif && { backgroundColor: accent, borderColor: accent },
+                        hovered && !actif && { backgroundColor: couleurs.surface3 },
+                        pressed && { transform: [{ scale: 0.98 }] },
+                      ]}
+                    >
+                      <Text style={[t.label, { color: actif ? encre : couleurs.texteDoux }]}>
+                        {s.libelle}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-          {/* Épisodes (séries uniquement) */}
-          {type === 'serie' ? (
-            <BlocEpisodes
-              serieId={id}
-              nbSaisons={titre.nombreSaisons ?? 0}
-              onEpisodeCoche={garantirEnCours}
-            />
-          ) : null}
+              {entree ? (
+                <View style={styles.noteBloc}>
+                  <Text style={[t.overline, { color: couleurs.texteFaible }]}>MA NOTE</Text>
+                  <Etoiles note={entree.notePerso} onChange={noterTitre} />
+                </View>
+              ) : null}
+
+              {entree?.statut === 'termine' && entree.vuLe ? (
+                <Text style={[t.caption, styles.vuLe]}>
+                  Vu le{' '}
+                  {new Date(entree.vuLe).toLocaleDateString('fr-FR', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                </Text>
+              ) : null}
+
+              {/* Où regarder */}
+              {plateformes.length > 0 ? (
+                <View style={styles.section}>
+                  <Text style={[t.h2, styles.sectionTitre]}>Où regarder</Text>
+                  <View style={styles.chips}>
+                    {plateformes.map((p) => (
+                      <View key={p} style={styles.chip}>
+                        <Text style={[t.label, { color: couleurs.texteCorps }]}>{p}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+
+              {/* Synopsis : borné à la mesure de lecture (~75 caractères). */}
+              {titre.synopsis ? (
+                <View style={styles.section}>
+                  <Text style={[t.h2, styles.sectionTitre]}>Synopsis</Text>
+                  <Text style={[t.body, styles.synopsis]}>{titre.synopsis}</Text>
+                </View>
+              ) : null}
+
+              {/* Épisodes (séries uniquement) */}
+              {type === 'serie' ? (
+                <BlocEpisodes
+                  serieId={id}
+                  nbSaisons={titre.nombreSaisons ?? 0}
+                  nbEpisodes={titre.nombreEpisodes ?? 0}
+                  accent={accent}
+                  encre={encre}
+                  densite={d}
+                  onEpisodeCoche={garantirEnCours}
+                />
+              ) : null}
+
+              {entree ? (
+                <Pressable
+                  onPress={retirer}
+                  accessibilityRole="button"
+                  accessibilityLabel="Retirer de ma liste"
+                  style={({ hovered }: EtatPressable) => [
+                    styles.retirer,
+                    hovered && { backgroundColor: `${couleurs.accentRose}14` },
+                  ]}
+                >
+                  <Ionicons name="trash-outline" size={16} color={couleurs.accentRose} />
+                  <Text style={[t.label, { color: couleurs.accentRose }]}>Retirer de ma liste</Text>
+                </Pressable>
+              ) : null}
+            </>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -243,21 +333,30 @@ export default function EcranDetail() {
 function BlocEpisodes({
   serieId,
   nbSaisons,
+  nbEpisodes,
+  accent,
+  encre,
+  densite,
   onEpisodeCoche,
 }: {
   serieId: number;
   /** Nombre de saisons, fourni par le parent (déjà connu via detailsTitre). */
   nbSaisons: number;
-  /** Appelé quand un épisode est coché, pour activer le suivi de la série. */
+  /** Nombre total d'épisodes diffusés, pour la barre de progression. */
+  nbEpisodes: number;
+  accent: string;
+  encre: string;
+  densite: 'mobile' | 'desktop';
   onEpisodeCoche: () => void;
 }) {
+  const t = typo(densite);
   const [saison, setSaison] = useState(1);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [vus, setVus] = useState<Set<number>>(new Set());
   const [notes, setNotes] = useState<Map<number, number | null>>(new Map());
+  const [totalVus, setTotalVus] = useState(0);
   const [chargement, setChargement] = useState(true);
-
-  // Le nombre de saisons vient du parent : pas de second appel /tv/{id} ici.
+  const staggerArme = useRef(true);
 
   // Épisodes de la saison courante + épisodes déjà vus.
   const rafraichir = useCallback(async () => {
@@ -270,8 +369,10 @@ function BlocEpisodes({
       setEpisodes(eps);
       setVus(new Set(vusDb.map((v) => v.episodeId)));
       setNotes(new Map(vusDb.map((v): [number, number | null] => [v.episodeId, v.note])));
+      setTotalVus(vusDb.length);
     } finally {
       setChargement(false);
+      setTimeout(() => (staggerArme.current = false), 800);
     }
   }, [serieId, saison]);
 
@@ -282,15 +383,18 @@ function BlocEpisodes({
   /** Coche/décoche un épisode et met à jour Firestore. */
   async function basculer(ep: Episode) {
     const dejaVu = vus.has(ep.id);
-    // Mise à jour optimiste de l'UI (immédiate), puis appel réseau.
+    // Mise à jour optimiste de l'UI (immédiate), puis appel réseau : le retour
+    // visuel ne doit JAMAIS attendre la latence de Firestore.
     const copie = new Set(vus);
     if (dejaVu) {
       copie.delete(ep.id);
       setVus(copie);
+      setTotalVus((n) => Math.max(0, n - 1));
       await demarquerEpisode(ep.id).catch(() => rafraichir());
     } else {
       copie.add(ep.id);
       setVus(copie);
+      setTotalVus((n) => n + 1);
       await marquerEpisodeVu(serieId, ep.id, ep.saison, ep.numero).catch(() => rafraichir());
       // Cocher un épisode fait entrer la série dans le suivi « en cours ».
       onEpisodeCoche();
@@ -302,71 +406,108 @@ function BlocEpisodes({
     const etaitVu = vus.has(ep.id);
     // Mise à jour optimiste : la note, et l'épisode passe "vu".
     setNotes((prev) => new Map(prev).set(ep.id, note));
-    if (!etaitVu) setVus((prev) => new Set(prev).add(ep.id));
+    if (!etaitVu) {
+      setVus((prev) => new Set(prev).add(ep.id));
+      setTotalVus((n) => n + 1);
+    }
     await noterEpisode(serieId, ep.id, ep.saison, ep.numero, note).catch(() => rafraichir());
     if (!etaitVu && note !== null) onEpisodeCoche();
   }
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitre}>Épisodes</Text>
+      <View style={styles.episodesEnTete}>
+        <Text style={[t.h2, styles.sectionTitre]}>Épisodes</Text>
+        {nbEpisodes > 0 ? (
+          <View style={styles.progressionBloc}>
+            <Progression
+              vus={Math.min(totalVus, nbEpisodes)}
+              total={nbEpisodes}
+              accent={accent}
+              libelle
+            />
+          </View>
+        ) : null}
+      </View>
 
       {/* Sélecteur de saison */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.saisons}>
-        {Array.from({ length: nbSaisons }, (_, i) => i + 1).map((s) => (
-          <Pressable
-            key={s}
-            onPress={() => setSaison(s)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: s === saison }}
-            accessibilityLabel={`Saison ${s}`}
-            style={[styles.saisonBtn, s === saison && styles.saisonBtnActif]}
-          >
-            <Text style={[styles.saisonTexte, s === saison && styles.saisonTexteActif]}>
-              Saison {s}
-            </Text>
-          </Pressable>
-        ))}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.saisons}
+      >
+        {Array.from({ length: nbSaisons }, (_, i) => i + 1).map((s) => {
+          const actif = s === saison;
+          return (
+            <Pressable
+              key={s}
+              onPress={() => setSaison(s)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: actif }}
+              accessibilityLabel={`Saison ${s}`}
+              style={({ hovered }: EtatPressable) => [
+                styles.saisonBtn,
+                actif && { backgroundColor: accent, borderColor: accent },
+                hovered && !actif && { backgroundColor: couleurs.surface3 },
+              ]}
+            >
+              <Text style={[t.label, { color: actif ? encre : couleurs.texteDoux }]}>
+                Saison {s}
+              </Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
 
       {chargement ? (
-        <Chargement />
+        <LignesSquelettes nombre={5} />
       ) : (
-        episodes.map((ep) => {
+        episodes.map((ep, i) => {
           const vu = vus.has(ep.id);
           return (
-            <Pressable
+            <Animated.View
               key={ep.id}
-              style={styles.episode}
-              onPress={() => basculer(ep)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: vu }}
-              accessibilityLabel={`Épisode ${ep.numero}${ep.nom ? ', ' + ep.nom : ''}`}
-              accessibilityHint={vu ? 'Marquer comme non vu' : 'Marquer comme vu'}
+              entering={
+                staggerArme.current
+                  ? FadeInDown.duration(280).delay(Math.min(i, 6) * 40)
+                  : undefined
+              }
             >
-              <Ionicons
-                name={vu ? 'checkmark-circle' : 'ellipse-outline'}
-                size={24}
-                color={vu ? couleurs.succes : couleurs.texteDoux}
-              />
-              <View style={styles.episodeInfos}>
-                <Text style={styles.episodeTitre} numberOfLines={1}>
-                  {ep.numero}. {ep.nom || 'Épisode ' + ep.numero}
-                </Text>
-                {ep.dateDiffusion ? (
-                  <Text style={styles.episodeDate}>
-                    {new Date(ep.dateDiffusion).toLocaleDateString('fr-FR')}
+              <Pressable
+                style={({ hovered }: EtatPressable) => [
+                  styles.episode,
+                  hovered && { backgroundColor: couleurs.surface },
+                ]}
+                onPress={() => basculer(ep)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: vu }}
+                accessibilityLabel={`Épisode ${ep.numero}${ep.nom ? ', ' + ep.nom : ''}`}
+                accessibilityHint={vu ? 'Marquer comme non vu' : 'Marquer comme vu'}
+              >
+                <CocheVu vu={vu} accent={accent} />
+                <View style={styles.episodeInfos}>
+                  <Text
+                    style={[t.h3, { color: vu ? couleurs.texteDoux : couleurs.texte }]}
+                    numberOfLines={1}
+                  >
+                    {ep.numero}. {ep.nom || 'Épisode ' + ep.numero}
                   </Text>
-                ) : null}
-                <View style={styles.episodeNote}>
-                  <Etoiles
-                    note={notes.get(ep.id) ?? null}
-                    onChange={(n) => noterEp(ep, n)}
-                    taille={16}
-                  />
+                  {ep.dateDiffusion ? (
+                    <Text style={[t.caption, { color: couleurs.texteFaible, marginTop: 2 }]}>
+                      {new Date(ep.dateDiffusion).toLocaleDateString('fr-FR')}
+                      {ep.duree ? ` · ${ep.duree} min` : ''}
+                    </Text>
+                  ) : null}
+                  <View style={styles.episodeNote}>
+                    <Etoiles
+                      note={notes.get(ep.id) ?? null}
+                      onChange={(n) => noterEp(ep, n)}
+                      taille={15}
+                    />
+                  </View>
                 </View>
-              </View>
-            </Pressable>
+              </Pressable>
+            </Animated.View>
           );
         })
       )}
@@ -375,99 +516,109 @@ function BlocEpisodes({
 }
 
 const styles = StyleSheet.create({
-  ecran: { flex: 1, backgroundColor: couleurs.fond },
-  fond: { height: 220, justifyContent: 'flex-start', backgroundColor: couleurs.surface2 },
-  voile: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(14,14,26,0.35)' },
+  ecran: { flex: 1, backgroundColor: couleurs.page },
+  voileHaut: { position: 'absolute', top: 0, left: 0, right: 0, height: 96 },
   retour: {
-    margin: espacements.m,
     width: 40,
     height: 40,
     borderRadius: rayons.rond,
-    backgroundColor: 'rgba(14,14,26,0.6)',
+    backgroundColor: 'rgba(11,14,17,0.6)',
+    borderWidth: 1,
+    borderColor: couleurs.lisere,
     alignItems: 'center',
     justifyContent: 'center',
+    cursor: 'pointer',
   },
-  corps: { padding: espacements.m },
-  titre: { color: couleurs.texte, fontSize: polices.grandTitre, fontWeight: '800' },
-  metaLigne: { flexDirection: 'row', alignItems: 'center', marginTop: espacements.s },
-  note: {
-    color: couleurs.texte,
-    fontWeight: '700',
-    marginLeft: espacements.xs,
-    marginRight: espacements.m,
+  corps: {
+    // Remonte sur le backdrop : le hero ne se termine pas, il se dissout.
+    marginTop: -64,
+    width: '100%',
+    maxWidth: conteneurs.standard,
+    alignSelf: 'center',
+    paddingBottom: espacements.section,
   },
-  genres: { color: couleurs.texteDoux, fontSize: polices.normale, flexShrink: 1 },
-  statuts: { flexDirection: 'row', marginTop: espacements.l },
-  statutBtn: {
-    flex: 1,
-    paddingVertical: espacements.m,
-    borderRadius: rayons.m,
-    backgroundColor: couleurs.surface2,
-    marginRight: espacements.s,
-    alignItems: 'center',
-  },
-  statutBtnActif: { backgroundColor: couleurs.accent },
-  statutTexte: { color: couleurs.texteDoux, fontWeight: '600', fontSize: polices.normale },
-  statutTexteActif: { color: couleurs.texte },
-  retirer: {
+  metaLigne: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: espacements.xs,
+    marginTop: espacements.s,
+  },
+  note: {
+    fontFamily: 'Manrope_800ExtraBold',
+    fontSize: 13,
+    marginRight: espacements.s,
+    fontVariant: ['tabular-nums'],
+  },
+  statuts: { flexDirection: 'row', gap: espacements.s, marginTop: espacements.l },
+  statutBtn: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
     justifyContent: 'center',
-    marginTop: espacements.m,
+    borderRadius: rayons.rond,
+    backgroundColor: couleurs.surface2,
+    borderWidth: 1,
+    borderColor: couleurs.bordure2,
+    cursor: 'pointer',
   },
-  retirerTexte: {
-    color: couleurs.accentRose,
-    marginLeft: espacements.xs,
-    fontSize: polices.normale,
+  noteBloc: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.m,
+    marginTop: espacements.ml,
   },
-  vuLe: {
-    color: couleurs.texteDoux,
-    textAlign: 'center',
-    marginTop: espacements.m,
-    fontSize: polices.normale,
-  },
-  noteBloc: { flexDirection: 'row', alignItems: 'center', marginTop: espacements.l },
-  noteLabel: { color: couleurs.texteDoux, fontSize: polices.normale, marginRight: espacements.m },
-  section: { marginTop: espacements.l },
-  sectionTitre: {
-    color: couleurs.texte,
-    fontSize: polices.titre,
-    fontWeight: '700',
-    marginBottom: espacements.m,
-  },
-  chips: { flexDirection: 'row', flexWrap: 'wrap' },
+  vuLe: { color: couleurs.texteFaible, marginTop: espacements.s },
+  section: { marginTop: espacements.section },
+  sectionTitre: { color: couleurs.texte, marginBottom: espacements.m },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: espacements.s },
   chip: {
     backgroundColor: couleurs.surface,
     borderRadius: rayons.rond,
     paddingHorizontal: espacements.m,
-    paddingVertical: espacements.s,
-    marginRight: espacements.s,
-    marginBottom: espacements.s,
+    height: 34,
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: couleurs.bordure,
+    borderTopColor: couleurs.lisere,
   },
-  chipTexte: { color: couleurs.texte, fontSize: polices.normale },
-  synopsis: { color: couleurs.texteDoux, fontSize: polices.moyenne, lineHeight: 22 },
-  saisons: { flexDirection: 'row', marginBottom: espacements.m },
+  // ~75 caractères par ligne : la mesure optimale de lecture.
+  synopsis: { color: couleurs.texteCorps, maxWidth: conteneurs.lecture },
+  episodesEnTete: { gap: espacements.s },
+  progressionBloc: { maxWidth: 280, marginBottom: espacements.m },
+  saisons: { flexDirection: 'row', gap: espacements.s, paddingBottom: espacements.m },
   saisonBtn: {
     paddingHorizontal: espacements.m,
-    paddingVertical: espacements.s,
+    height: 38,
+    justifyContent: 'center',
     borderRadius: rayons.rond,
     backgroundColor: couleurs.surface2,
-    marginRight: espacements.s,
+    borderWidth: 1,
+    borderColor: couleurs.bordure2,
+    cursor: 'pointer',
   },
-  saisonBtnActif: { backgroundColor: couleurs.accent },
-  saisonTexte: { color: couleurs.texteDoux, fontWeight: '600' },
-  saisonTexteActif: { color: couleurs.texte },
   episode: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: espacements.m,
+    gap: espacements.m,
+    paddingVertical: espacements.sm,
+    paddingHorizontal: espacements.s,
+    borderRadius: rayons.m,
     borderBottomWidth: 1,
     borderBottomColor: couleurs.bordure,
+    cursor: 'pointer',
   },
-  episodeInfos: { flex: 1, marginLeft: espacements.m },
-  episodeTitre: { color: couleurs.texte, fontSize: polices.normale, fontWeight: '500' },
-  episodeDate: { color: couleurs.texteDoux, fontSize: polices.petite, marginTop: 2 },
+  episodeInfos: { flex: 1 },
   episodeNote: { marginTop: espacements.xs },
+  retirer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: espacements.s,
+    height: 48,
+    borderRadius: rayons.rond,
+    borderWidth: 1,
+    borderColor: couleurs.bordure2,
+    marginTop: espacements.section,
+    cursor: 'pointer',
+  },
 });
