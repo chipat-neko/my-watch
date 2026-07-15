@@ -1,15 +1,18 @@
 // =============================================================================
 //  Écran : Découvrir
 //  ---------------------------------------------------------------------------
-//  Fusionne la découverte (tendances / populaires) et la recherche (le handoff
-//  place la recherche dans cet onglet). Champ de recherche en haut ; sans
-//  saisie, on montre des chips de filtre + une grille de tendances.
+//  Fusionne la découverte (tendances / populaires / par genre) et la recherche.
+//
+//  Défilement infini : l'écran plafonnait à 20 résultats — la première page de
+//  TMDb — et s'arrêtait là. Le catalogue entier est maintenant accessible.
 // =============================================================================
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -23,8 +26,17 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CartePoster } from '@/components/CartePoster';
 import { GrilleSquelettes } from '@/components/Squelette';
-import { rechercher, tendances, seriesPopulaires, filmsPopulaires } from '@/lib/tmdb';
-import { EtatPressable, Titre } from '@/types';
+import {
+  rechercher,
+  tendances,
+  seriesPopulaires,
+  filmsPopulaires,
+  parGenre,
+  mieuxNotes,
+} from '@/lib/tmdb';
+import { encoreDesPages, fusionnerPage } from '@/services/pagination';
+import { EtatPressable, Titre, TypeMedia } from '@/types';
+import { GENRES_FR } from '@/theme/constantes';
 import { useVariante } from '@/hooks/useVariante';
 import {
   couleurs,
@@ -41,6 +53,27 @@ import {
 const FILTRES = ['Pour toi', 'Séries', 'Films'] as const;
 type Filtre = (typeof FILTRES)[number];
 
+type Classement = 'populaire' | 'note';
+
+/**
+ * Genres proposés en filtre, dans l'ordre d'usage réel. Volontairement une
+ * sélection, et non les 19 genres de TMDb : une barre de dix-neuf puces ne se
+ * lit plus, elle se subit.
+ *
+ * Les identifiants « Action » diffèrent entre films (28) et séries (10759) —
+ * d'où le couple.
+ */
+const GENRES: { libelle: string; film: number; serie: number }[] = [
+  { libelle: 'Action', film: 28, serie: 10759 },
+  { libelle: 'Comédie', film: 35, serie: 35 },
+  { libelle: 'Drame', film: 18, serie: 18 },
+  { libelle: 'Crime', film: 80, serie: 80 },
+  { libelle: 'Sci-Fi', film: 878, serie: 10765 },
+  { libelle: 'Animation', film: 16, serie: 16 },
+  { libelle: 'Documentaire', film: 99, serie: 99 },
+  { libelle: 'Horreur', film: 27, serie: 9648 },
+];
+
 /**
  * Retire le contour bleu que le navigateur pose par défaut sur un champ focus :
  * ici, le focus est déjà porté par la bordure d'accent de la barre. `outlineStyle`
@@ -52,48 +85,99 @@ export default function EcranDecouvrir() {
   const router = useRouter();
   const { variante, accent, encre } = useVariante();
   const { width: fenetre } = useWindowDimensions();
+
   const [texte, setTexte] = useState('');
-  const [resultats, setResultats] = useState<Titre[]>([]);
   const [filtre, setFiltre] = useState<Filtre>('Pour toi');
-  const [tend, setTend] = useState<Titre[]>([]);
-  const [series, setSeries] = useState<Titre[]>([]);
-  const [films, setFilms] = useState<Titre[]>([]);
+  const [genre, setGenre] = useState<number | null>(null);
+  const [classement, setClassement] = useState<Classement>('populaire');
+
+  const [titres, setTitres] = useState<Titre[]>([]);
+  const [page, setPage] = useState(1);
+  const [fini, setFini] = useState(false);
   const [chargement, setChargement] = useState(true);
+  const [chargeSuite, setChargeSuite] = useState(false);
   const [focus, setFocus] = useState(false);
+
   const minuteur = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Identifie la requête courante : une réponse lente d'un filtre abandonné ne
+  // doit jamais écraser les résultats du filtre actuel.
+  const requete = useRef(0);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const [t, s, f] = await Promise.all([tendances(), seriesPopulaires(), filmsPopulaires()]);
-        setTend(t);
-        setSeries(s);
-        setFilms(f);
-      } finally {
-        setChargement(false);
+  const enRecherche = texte.trim().length >= 2;
+  const typeCourant: TypeMedia = filtre === 'Films' ? 'film' : 'serie';
+
+  /** Charge une page pour l'état courant (filtre, genre, classement, recherche). */
+  const chargerPage = useCallback(
+    async (n: number): Promise<Titre[]> => {
+      const q = texte.trim();
+      if (q.length >= 2) return rechercher(q, n);
+      if (genre !== null) {
+        const g = GENRES.find((x) => (filtre === 'Films' ? x.film : x.serie) === genre);
+        const id = g ? (filtre === 'Films' ? g.film : g.serie) : genre;
+        return parGenre(typeCourant, id, n, classement);
       }
-    })();
-  }, []);
+      if (classement === 'note' && filtre !== 'Pour toi') return mieuxNotes(typeCourant, n);
+      if (filtre === 'Séries') return seriesPopulaires(n);
+      if (filtre === 'Films') return filmsPopulaires(n);
+      return tendances(n);
+    },
+    [texte, filtre, genre, classement, typeCourant]
+  );
 
-  // Recherche débattue (400 ms).
+  // Premier chargement, et rechargement à chaque changement de critère.
   useEffect(() => {
-    if (minuteur.current) clearTimeout(minuteur.current);
     const q = texte.trim();
-    if (q.length < 2) {
-      setResultats([]);
+    if (minuteur.current) clearTimeout(minuteur.current);
+
+    // La recherche est débattue (400 ms) ; changer de filtre, non — le geste est
+    // déjà délibéré.
+    const delai = q.length >= 2 ? 400 : 0;
+    if (q.length > 0 && q.length < 2) {
+      setTitres([]);
+      setChargement(false);
       return;
     }
+
+    const mien = ++requete.current;
+    setChargement(true);
     minuteur.current = setTimeout(async () => {
       try {
-        setResultats(await rechercher(q));
+        const r = await chargerPage(1);
+        if (requete.current !== mien) return;
+        setTitres(r);
+        setPage(1);
+        setFini(!encoreDesPages(r, 1));
       } catch {
-        setResultats([]);
+        if (requete.current === mien) setTitres([]);
+      } finally {
+        if (requete.current === mien) setChargement(false);
       }
-    }, 400);
+    }, delai);
+
     return () => {
       if (minuteur.current) clearTimeout(minuteur.current);
     };
-  }, [texte]);
+  }, [chargerPage, texte]);
+
+  /** Page suivante, au bout de la liste. */
+  async function suite() {
+    if (chargeSuite || fini || chargement || titres.length === 0) return;
+    const mien = requete.current;
+    setChargeSuite(true);
+    try {
+      const suivante = page + 1;
+      const r = await chargerPage(suivante);
+      if (requete.current !== mien) return;
+      setTitres((courants) => fusionnerPage(courants, r));
+      setPage(suivante);
+      setFini(!encoreDesPages(r, suivante));
+    } catch {
+      // Réseau indisponible : on s'arrête là plutôt que de boucler sur l'erreur.
+      setFini(true);
+    } finally {
+      if (requete.current === mien) setChargeSuite(false);
+    }
+  }
 
   function ouvrir(titre: Titre) {
     router.push({
@@ -110,37 +194,31 @@ export default function EcranDecouvrir() {
     });
   }
 
-  const enRecherche = texte.trim().length >= 2;
-  const source = filtre === 'Séries' ? series : filtre === 'Films' ? films : tend;
-  const grille = enRecherche ? resultats : source;
-
   const grandEcran = fenetre >= seuilLarge;
   // ⚠️ LE BUG QUI ÉCRASAIT LES AFFICHES : ce calcul partait de la largeur de la
-  // FENÊTRE, alors que la barre latérale en consomme déjà 248. Sur une fenêtre de
-  // 1100px, le code croyait disposer de 1060px pour 828px réels — soit six
-  // colonnes tassées dans la place de quatre. Le défaut touchait TOUT écran de
-  // moins de 1372px, donc la quasi-totalité des ordinateurs portables.
+  // FENÊTRE, alors que la barre latérale en consomme déjà 248.
   const largeurUtile = fenetre - (grandEcran ? largeurRail : 0);
   const d = densiteDe(largeurUtile);
   const t = typo(d);
   const padding = paddingEcran(largeurUtile);
   const gap = d === 'desktop' ? espacements.l : espacements.sm;
 
-  // 176px : en dessous de ~150 une affiche est un timbre dont le logotype n'est
-  // plus lisible. Et à DPR 2, ~171px consomme exactement les 342px de bitmap que
-  // sert TMDb : 1:1, aucun octet gaspillé.
   const cible =
     d === 'desktop' ? (variante === 'grid' ? 148 : 176) : variante === 'grid' ? 92 : 108;
-
   const dispo = Math.min(largeurUtile, maxLargeur) - padding * 2;
-  // `round` et non `floor` : arrondir vers le bas gaspille jusqu'à une colonne
-  // entière de vide.
   const colonnes = Math.max(2, Math.round(dispo / (cible + gap)));
   const largeur = Math.floor((dispo - (colonnes - 1) * gap) / colonnes);
 
-  // Un badge « Film » sur chaque carte quand le filtre dit déjà « Films » est du
-  // bruit pur : on ne l'affiche que sur les listes réellement mixtes.
-  const listeMixte = enRecherche || filtre === 'Pour toi';
+  const listeMixte = enRecherche || (filtre === 'Pour toi' && genre === null);
+  const titreSection = enRecherche
+    ? `Résultats pour « ${texte.trim()} »`
+    : genre !== null
+      ? `${GENRES_FR[genre] ?? 'Genre'} · ${filtre === 'Films' ? 'Films' : 'Séries'}`
+      : filtre === 'Pour toi'
+        ? 'Tendances'
+        : classement === 'note'
+          ? `${filtre} les mieux notés`
+          : `${filtre} populaires`;
 
   return (
     <SafeAreaView style={styles.ecran} edges={['top']}>
@@ -179,55 +257,155 @@ export default function EcranDecouvrir() {
         </View>
 
         {chargement ? (
-          // Un squelette aux dimensions RÉELLES des cartes, et non un spinner :
-          // il préfigure le layout, donc rien ne saute au remplissage.
           <View style={{ marginTop: espacements.xl }}>
             <GrilleSquelettes colonnes={colonnes} largeur={largeur} lignes={2} gap={gap} />
           </View>
         ) : (
           <FlatList
             key={colonnes}
-            data={grille}
+            data={titres}
             keyExtractor={(item) => `${item.type}-${item.id}`}
             numColumns={colonnes}
             columnWrapperStyle={{ gap, marginBottom: gap }}
             contentContainerStyle={styles.liste}
             showsVerticalScrollIndicator={false}
+            // 0.6 : on charge avant d'atteindre le bas, pour que le défilement
+            // ne s'interrompe jamais.
+            onEndReached={suite}
+            onEndReachedThreshold={0.6}
             ListHeaderComponent={
-              enRecherche ? null : (
-                <View>
-                  <View style={styles.filtres}>
-                    {FILTRES.map((f) => {
-                      const actif = f === filtre;
-                      return (
+              <View>
+                {enRecherche ? null : (
+                  <>
+                    <View style={styles.filtres}>
+                      {FILTRES.map((f) => {
+                        const actif = f === filtre;
+                        return (
+                          <Pressable
+                            key={f}
+                            onPress={() => {
+                              setFiltre(f);
+                              // Les genres n'ont pas le même identifiant selon
+                              // le type : garder la sélection en changeant de
+                              // filtre afficherait un genre faux.
+                              setGenre(null);
+                              if (f === 'Pour toi') setClassement('populaire');
+                            }}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: actif }}
+                            style={({ hovered }: EtatPressable) => [
+                              styles.chip,
+                              actif && { backgroundColor: accent, borderColor: accent },
+                              hovered && !actif && { backgroundColor: couleurs.surface3 },
+                            ]}
+                          >
+                            <Text style={[t.label, { color: actif ? encre : couleurs.texteDoux }]}>
+                              {f}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+
+                      {/* Le classement n'a pas de sens sur « Pour toi », qui EST
+                          déjà un classement (les tendances de la semaine). */}
+                      {filtre !== 'Pour toi' ? (
                         <Pressable
-                          key={f}
-                          onPress={() => setFiltre(f)}
+                          onPress={() =>
+                            setClassement((c) => (c === 'populaire' ? 'note' : 'populaire'))
+                          }
                           accessibilityRole="button"
-                          accessibilityState={{ selected: actif }}
+                          accessibilityLabel={
+                            classement === 'populaire' ? 'Trier par note' : 'Trier par popularité'
+                          }
                           style={({ hovered }: EtatPressable) => [
                             styles.chip,
-                            actif && { backgroundColor: accent, borderColor: accent },
-                            hovered && !actif && { backgroundColor: couleurs.surface3 },
+                            styles.chipTri,
+                            hovered && { backgroundColor: couleurs.surface3 },
                           ]}
                         >
-                          <Text style={[t.label, { color: actif ? encre : couleurs.texteDoux }]}>
-                            {f}
+                          <Ionicons
+                            name={classement === 'note' ? 'star' : 'flame'}
+                            size={13}
+                            color={classement === 'note' ? couleurs.note : couleurs.texteDoux}
+                          />
+                          <Text style={[t.label, { color: couleurs.texteDoux }]}>
+                            {classement === 'note' ? 'Mieux notés' : 'Populaires'}
                           </Text>
                         </Pressable>
-                      );
-                    })}
-                  </View>
-                  <View style={styles.sectionEnTete}>
+                      ) : null}
+                    </View>
+
+                    {/* Genres : rail horizontal, il déborde volontairement. */}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.genres}
+                    >
+                      <Pressable
+                        onPress={() => setGenre(null)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: genre === null }}
+                        style={({ hovered }: EtatPressable) => [
+                          styles.puceGenre,
+                          genre === null && { borderColor: accent, backgroundColor: `${accent}1F` },
+                          hovered && genre !== null && { backgroundColor: couleurs.surface3 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            t.caption,
+                            { color: genre === null ? accent : couleurs.texteDoux },
+                          ]}
+                        >
+                          Tous les genres
+                        </Text>
+                      </Pressable>
+
+                      {GENRES.map((g) => {
+                        const id = filtre === 'Films' ? g.film : g.serie;
+                        const actif = genre === id;
+                        return (
+                          <Pressable
+                            key={g.libelle}
+                            onPress={() => setGenre(actif ? null : id)}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: actif }}
+                            style={({ hovered }: EtatPressable) => [
+                              styles.puceGenre,
+                              actif && { borderColor: accent, backgroundColor: `${accent}1F` },
+                              hovered && !actif && { backgroundColor: couleurs.surface3 },
+                            ]}
+                          >
+                            <Text
+                              style={[t.caption, { color: actif ? accent : couleurs.texteDoux }]}
+                            >
+                              {g.libelle}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                )}
+
+                <View style={styles.sectionEnTete}>
+                  {enRecherche ? null : (
                     <Text style={[t.overline, { color: accent }]}>
-                      {filtre === 'Pour toi' ? 'CETTE SEMAINE' : 'EN CE MOMENT'}
+                      {genre !== null
+                        ? 'FILTRÉ PAR GENRE'
+                        : filtre === 'Pour toi'
+                          ? 'CETTE SEMAINE'
+                          : 'EN CE MOMENT'}
                     </Text>
-                    <Text style={[t.h2, { color: couleurs.texte, marginTop: espacements.xs }]}>
-                      {filtre === 'Pour toi' ? 'Tendances' : `${filtre} populaires`}
-                    </Text>
-                  </View>
+                  )}
+                  <Text
+                    style={[t.h2, { color: couleurs.texte, marginTop: espacements.xs }]}
+                    numberOfLines={1}
+                  >
+                    {titreSection}
+                  </Text>
                 </View>
-              )
+              </View>
             }
             renderItem={({ item, index }) => (
               <Animated.View
@@ -244,11 +422,22 @@ export default function EcranDecouvrir() {
                 />
               </Animated.View>
             )}
+            ListFooterComponent={
+              chargeSuite ? (
+                <View style={styles.pied}>
+                  <ActivityIndicator color={accent} />
+                </View>
+              ) : fini && titres.length > 12 ? (
+                <Text style={[t.caption, styles.finListe]}>Tu as tout vu.</Text>
+              ) : null
+            }
             ListEmptyComponent={
               <Text style={[t.body, styles.vide]}>
                 {enRecherche
                   ? `Aucun résultat pour « ${texte.trim()} ».`
-                  : 'Tape au moins 2 caractères pour rechercher.'}
+                  : genre !== null
+                    ? 'Aucun titre dans ce genre.'
+                    : 'Tape au moins 2 caractères pour rechercher.'}
               </Text>
             }
           />
@@ -281,7 +470,12 @@ const styles = StyleSheet.create({
   },
   champ: { flex: 1, color: couleurs.texte, height: '100%' },
   effacer: { cursor: 'pointer' },
-  filtres: { flexDirection: 'row', gap: espacements.s, paddingBottom: espacements.xs },
+  filtres: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: espacements.s,
+    paddingTop: espacements.ml,
+  },
   chip: {
     height: 38,
     justifyContent: 'center',
@@ -292,9 +486,32 @@ const styles = StyleSheet.create({
     borderColor: couleurs.bordure2,
     cursor: 'pointer',
   },
+  chipTri: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.s,
+    marginLeft: 'auto',
+  },
+  genres: { flexDirection: 'row', gap: espacements.s, paddingTop: espacements.sm },
+  puceGenre: {
+    height: 32,
+    justifyContent: 'center',
+    paddingHorizontal: espacements.sm,
+    borderRadius: rayons.s,
+    backgroundColor: couleurs.surface2,
+    borderWidth: 1,
+    borderColor: couleurs.bordure,
+    cursor: 'pointer',
+  },
   // 56 au-dessus, 16 en dessous : c'est ce rapport de 3,5 qui groupe le titre
   // avec son contenu et sépare les sections. À distances égales, rien ne se lit.
-  sectionEnTete: { marginTop: espacements.section, marginBottom: espacements.m },
+  sectionEnTete: { marginTop: espacements.xl, marginBottom: espacements.m },
   liste: { paddingBottom: espacements.section },
+  pied: { paddingVertical: espacements.l, alignItems: 'center' },
+  finListe: {
+    color: couleurs.texteFaible,
+    textAlign: 'center',
+    paddingVertical: espacements.l,
+  },
   vide: { color: couleurs.texteDoux, textAlign: 'center', marginTop: espacements.xxl },
 });

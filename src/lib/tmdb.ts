@@ -93,23 +93,55 @@ export async function rechercher(texte: string, page = 1): Promise<Titre[]> {
 }
 
 /** Récupère les titres tendance de la semaine (films + séries mélangés). */
-export async function tendances(): Promise<Titre[]> {
-  const data = await appelTmdb<{ results: any[] }>('/trending/all/week');
+export async function tendances(page = 1): Promise<Titre[]> {
+  const data = await appelTmdb<{ results: any[] }>('/trending/all/week', { page: String(page) });
   return data.results
     .filter((r) => r.media_type === 'movie' || r.media_type === 'tv')
     .map((r) => versTitre(r));
 }
 
 /** Séries populaires du moment. */
-export async function seriesPopulaires(): Promise<Titre[]> {
-  const data = await appelTmdb<{ results: any[] }>('/tv/popular');
+export async function seriesPopulaires(page = 1): Promise<Titre[]> {
+  const data = await appelTmdb<{ results: any[] }>('/tv/popular', { page: String(page) });
   return data.results.map((r) => versTitre(r, 'serie'));
 }
 
 /** Films populaires du moment. */
-export async function filmsPopulaires(): Promise<Titre[]> {
-  const data = await appelTmdb<{ results: any[] }>('/movie/popular');
+export async function filmsPopulaires(page = 1): Promise<Titre[]> {
+  const data = await appelTmdb<{ results: any[] }>('/movie/popular', { page: String(page) });
   return data.results.map((r) => versTitre(r, 'film'));
+}
+
+/**
+ * Catalogue filtré par genre (endpoint « discover »).
+ *
+ * Trié par popularité : un tri par note ferait remonter des titres à 10/10
+ * notés par quatre personnes. `vote_count.gte` écarte ce bruit quand on trie
+ * réellement par note.
+ */
+export async function parGenre(
+  type: TypeMedia,
+  genreId: number,
+  page = 1,
+  tri: 'populaire' | 'note' = 'populaire'
+): Promise<Titre[]> {
+  const chemin = type === 'film' ? '/discover/movie' : '/discover/tv';
+  const data = await appelTmdb<{ results: any[] }>(chemin, {
+    with_genres: String(genreId),
+    page: String(page),
+    sort_by: tri === 'note' ? 'vote_average.desc' : 'popularity.desc',
+    // Sans ce garde-fou, « mieux notés » remonte des inconnus notés par quatre
+    // personnes plutôt que les vraies références.
+    'vote_count.gte': tri === 'note' ? '300' : '0',
+  });
+  return data.results.map((r) => versTitre(r, type));
+}
+
+/** Les mieux notés de tous les temps, tous genres confondus. */
+export async function mieuxNotes(type: TypeMedia, page = 1): Promise<Titre[]> {
+  const chemin = type === 'film' ? '/movie/top_rated' : '/tv/top_rated';
+  const data = await appelTmdb<{ results: any[] }>(chemin, { page: String(page) });
+  return data.results.map((r) => versTitre(r, type));
 }
 
 /** Détails complets d'un titre (film ou série). */
