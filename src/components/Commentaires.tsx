@@ -13,7 +13,7 @@
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { commentairesEpisode, commenter, supprimerCommentaire } from '@/services/social';
+import { commentairesEpisode, commenter, signaler, supprimerCommentaire } from '@/services/social';
 import { Commentaire } from '@/services/socialCalcul';
 import { jourLocal, libelleJour } from '@/services/historiqueCalcul';
 import { EtatPressable } from '@/types';
@@ -43,6 +43,8 @@ export function Commentaires({ serieId, episodeId, vu, moi, accent, encre, densi
   const [chargement, setChargement] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  /** Identifiant du commentaire signalé, pour confirmer l'envoi. */
+  const [signale, setSignale] = useState<string | null>(null);
 
   const charger = useCallback(async () => {
     setChargement(true);
@@ -86,6 +88,23 @@ export function Commentaires({ serieId, episodeId, vu, moi, accent, encre, densi
       setListe((l) => l.filter((c) => c.id !== id));
     } catch {
       setErreur('Suppression impossible.');
+    }
+  }
+
+  /**
+   * Signale un commentaire. Le motif n'est pas demandé : ajouter un formulaire
+   * ferait renoncer la plupart des gens, et un signalement sans motif vaut mieux
+   * qu'un signalement jamais envoyé. Le commentaire est joint, la console
+   * Firebase permet de juger sur pièce.
+   */
+  async function signalerCommentaire(id: string) {
+    if (signale) return;
+    try {
+      const c = liste.find((x) => x.id === id);
+      await signaler('commentaire', id, c?.texte.slice(0, 300) ?? 'Contenu inapproprié');
+      setSignale(id);
+    } catch {
+      setErreur('Signalement impossible.');
     }
   }
 
@@ -194,7 +213,25 @@ export function Commentaires({ serieId, episodeId, vu, moi, accent, encre, densi
                     >
                       <Ionicons name="trash-outline" size={13} color={couleurs.texteFaible} />
                     </Pressable>
-                  ) : null}
+                  ) : (
+                    // Signaler le commentaire d'un autre : c'est ici que le
+                    // problème se voit, donc ici que l'action doit être.
+                    <Pressable
+                      onPress={() => signalerCommentaire(c.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        signale === c.id ? 'Commentaire signalé' : 'Signaler ce commentaire'
+                      }
+                      hitSlop={8}
+                      style={styles.suppr}
+                    >
+                      <Ionicons
+                        name={signale === c.id ? 'checkmark' : 'flag-outline'}
+                        size={13}
+                        color={signale === c.id ? accent : couleurs.texteFaible}
+                      />
+                    </Pressable>
+                  )}
                 </View>
                 <Text style={[t.body, { color: couleurs.texteCorps }]}>{c.texte}</Text>
               </View>

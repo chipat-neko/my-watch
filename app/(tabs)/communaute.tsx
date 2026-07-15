@@ -29,13 +29,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
 import {
   accepterAmi,
+  bloquer,
   chercherProfils,
+  debloquer,
   demanderAmi,
   filDActualite,
+  garantirReservation,
   mesAmities,
+  mesBlocages,
   monProfil,
   Profil,
   profilsDe,
+  PseudoPrisErreur,
   retirerAmi,
 } from '@/services/social';
 import {
@@ -85,11 +90,16 @@ export default function EcranCommunaute() {
   const [activites, setActivites] = useState<Activite[]>([]);
   const [amities, setAmities] = useState<Amitie[]>([]);
   const [profils, setProfils] = useState<Map<string, Profil>>(new Map());
+  const [bloques, setBloques] = useState<Set<string>>(new Set());
   const [chargement, setChargement] = useState(true);
 
   const moi = utilisateur?.uid ?? '';
 
   const recharger = useCallback(async () => {
+    // Ferme le trou des profils créés avant l'unicité : sans réservation, leur
+    // pseudo reste prenable par n'importe qui.
+    await garantirReservation();
+
     const p = await monProfil().catch(() => null);
     setProfil(p);
     // Sans pseudo, on n'est trouvable par personne : inutile d'aller plus loin,
@@ -99,14 +109,18 @@ export default function EcranCommunaute() {
       return;
     }
 
-    const [fil, liens] = await Promise.all([
+    const [fil, liens, blocs] = await Promise.all([
       filDActualite().catch(() => [] as Activite[]),
       mesAmities().catch(() => [] as Amitie[]),
+      mesBlocages().catch(() => new Set<string>()),
     ]);
     setActivites(fil);
     setAmities(liens);
+    setBloques(blocs);
 
-    const autres = liens.map((a) => autreMembre(a, moi)).filter(Boolean);
+    // Les profils des amis ET des personnes bloquées : sans eux, la liste des
+    // blocages n'afficherait que des identifiants.
+    const autres = [...liens.map((a) => autreMembre(a, moi)).filter(Boolean), ...blocs];
     setProfils(await profilsDe(autres).catch(() => new Map()));
     setChargement(false);
   }, [moi]);
@@ -199,6 +213,7 @@ export default function EcranCommunaute() {
             amis={amis}
             demandes={demandesRecues}
             profils={profils}
+            bloques={bloques}
             accent={accent}
             encre={encre}
             densite={d}
@@ -240,8 +255,14 @@ function ChoixPseudo({
     try {
       await definirPseudo(pseudo);
       onFait();
-    } catch {
-      setErreur('Impossible d’enregistrer. Réessaie.');
+    } catch (e) {
+      // Distinguer « déjà pris » d'une panne : dire « réessaie » sur un pseudo
+      // occupé enverrait retenter à l'infini la même chose.
+      setErreur(
+        e instanceof PseudoPrisErreur
+          ? 'Ce pseudo est déjà pris. Essayes-en un autre.'
+          : 'Impossible d’enregistrer. Réessaie.'
+      );
     } finally {
       setOccupe(false);
     }
@@ -416,6 +437,7 @@ function Amis({
   amis,
   demandes,
   profils,
+  bloques,
   accent,
   encre,
   densite,
@@ -425,6 +447,7 @@ function Amis({
   amis: Amitie[];
   demandes: Amitie[];
   profils: Map<string, Profil>;
+  bloques: Set<string>;
   accent: string;
   encre: string;
   densite: 'mobile' | 'desktop';
@@ -539,29 +562,65 @@ function Amis({
             Personne pour l’instant. Cherche un pseudo ci-dessus.
           </Text>
         ) : (
-          amis.map((a) => (
+          amis.map((a) => {
+            const uid = autreMembre(a, moi);
+            const nom = profils.get(uid)?.pseudo ?? 'Quelqu’un';
+            return (
+              <LignePersonne
+                key={a.id}
+                pseudo={nom}
+                accent={accent}
+                encre={encre}
+                densite={densite}
+                secondaire={{
+                  libelle: 'Retirer',
+                  onPress: async () => {
+                    await retirerAmi(a.id);
+                    await onChange();
+                  },
+                }}
+                // Bloquer rompt le lien ET interdit toute nouvelle demande :
+                // trop lourd pour un clic isolé, d'où la confirmation.
+                danger={{
+                  libelle: 'Bloquer',
+                  confirmation: 'Bloquer ?',
+                  onPress: async () => {
+                    await bloquer(uid);
+                    await onChange();
+                  },
+                }}
+              />
+            );
+          })
+        )}
+      </View>
+
+      {bloques.size > 0 ? (
+        <View style={styles.bloc}>
+          <Text style={[t.overline, styles.blocTitre]}>BLOQUÉS</Text>
+          {[...bloques].map((uid) => (
             <LignePersonne
-              key={a.id}
-              pseudo={profils.get(autreMembre(a, moi))?.pseudo ?? 'Quelqu’un'}
+              key={uid}
+              pseudo={profils.get(uid)?.pseudo ?? 'Quelqu’un'}
               accent={accent}
               encre={encre}
               densite={densite}
-              secondaire={{
-                libelle: 'Retirer',
+              action={{
+                libelle: 'Débloquer',
                 onPress: async () => {
-                  await retirerAmi(a.id);
+                  await debloquer(uid);
                   await onChange();
                 },
               }}
             />
-          ))
-        )}
-      </View>
+          ))}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
 
-/** Une ligne « quelqu'un » avec une ou deux actions. */
+/** Une ligne « quelqu'un » avec ses actions. */
 function LignePersonne({
   pseudo,
   accent,
@@ -569,6 +628,7 @@ function LignePersonne({
   densite,
   action,
   secondaire,
+  danger,
 }: {
   pseudo: string;
   accent: string;
@@ -576,9 +636,12 @@ function LignePersonne({
   densite: 'mobile' | 'desktop';
   action?: { libelle: string; onPress?: () => Promise<void>; plein?: boolean; desactive?: boolean };
   secondaire?: { libelle: string; onPress: () => Promise<void> };
+  /** Action irréversible : demande une confirmation en deux temps. */
+  danger?: { libelle: string; confirmation: string; onPress: () => Promise<void> };
 }) {
   const t = typo(densite);
   const [occupe, setOccupe] = useState(false);
+  const [confirme, setConfirme] = useState(false);
 
   async function lancer(f?: () => Promise<void>) {
     if (!f || occupe) return;
@@ -600,6 +663,41 @@ function LignePersonne({
       <Text style={[t.h3, { color: couleurs.texte, flex: 1 }]} numberOfLines={1}>
         {pseudo}
       </Text>
+
+      {danger ? (
+        <Pressable
+          onPress={() => {
+            // Deux temps : le premier clic demande, le second agit. `Alert`
+            // n'existe pas sur react-native-web — une confirmation maison est le
+            // seul moyen d'avoir le même garde-fou partout.
+            if (!confirme) {
+              setConfirme(true);
+              setTimeout(() => setConfirme(false), 4000);
+              return;
+            }
+            lancer(danger.onPress);
+          }}
+          disabled={occupe}
+          accessibilityRole="button"
+          accessibilityLabel={
+            confirme ? `Confirmer : ${danger.libelle} ${pseudo}` : `${danger.libelle} ${pseudo}`
+          }
+          style={({ hovered }: EtatPressable) => [
+            styles.btnSecondaire,
+            confirme && {
+              backgroundColor: `${couleurs.accentRose}29`,
+              borderColor: couleurs.accentRose,
+            },
+            hovered && { borderColor: couleurs.accentRose },
+          ]}
+        >
+          <Text
+            style={[t.caption, { color: confirme ? couleurs.accentRose : couleurs.texteFaible }]}
+          >
+            {occupe ? '…' : confirme ? danger.confirmation : danger.libelle}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {secondaire ? (
         <Pressable

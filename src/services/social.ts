@@ -55,9 +55,14 @@ function idUtilisateur(): string {
 const maintenant = () => new Date().toISOString();
 
 const refProfils = () => collection(db, 'profils');
+/** Réservation des pseudos : l'identifiant du document EST le pseudo normalisé. */
+const refPseudos = () => collection(db, 'pseudos');
 const refAmities = () => collection(db, 'amities');
 const refActivites = () => collection(db, 'activites');
 const refCommentaires = () => collection(db, 'commentaires');
+const refSignalements = () => collection(db, 'signalements');
+/** Les blocages restent dans le sous-arbre privé : personne ne voit qui l'on bloque. */
+const refBlocages = (uid: string) => collection(db, 'users', uid, 'blocages');
 
 // --- Profils ----------------------------------------------------------------
 
@@ -74,8 +79,31 @@ export async function monProfil(): Promise<Profil | null> {
   return snap.exists() ? { uid, pseudo: snap.data().pseudo } : null;
 }
 
+/** Levée quand le pseudo demandé appartient déjà à quelqu'un d'autre. */
+export class PseudoPrisErreur extends Error {
+  constructor() {
+    super('Ce pseudo est déjà pris.');
+    this.name = 'PseudoPrisErreur';
+  }
+}
+
 /**
- * Crée ou met à jour son pseudo.
+ * Crée ou met à jour son pseudo, en garantissant son UNICITÉ.
+ *
+ * Firestore n'a pas de contrainte d'unicité : on réserve le pseudo dans une
+ * collection où il sert d'IDENTIFIANT de document. Deux personnes ne peuvent pas
+ * créer le même document — l'unicité devient structurelle.
+ *
+ * ORDRE IMPOSÉ : réserver d'abord, écrire le profil ensuite. La règle du profil
+ * vérifie la réservation par un `get()`, et Firestore évalue les règles sur
+ * l'état ANTÉRIEUR à l'écriture. Une transaction échouerait donc toujours : au
+ * moment d'évaluer le profil, la réservation faite dans la même transaction
+ * n'existe pas encore.
+ *
+ * La course est arbitrée par les règles, pas par une lecture préalable : deux
+ * clients qui lisent « libre » en même temps tentent tous deux un `setDoc`. Le
+ * premier crée le document ; pour le second, c'est un `update` — interdit. Le
+ * perdant reçoit une erreur, personne ne vole rien.
  *
  * `pseudoMin` accompagne `pseudo` : c'est lui qu'interroge la recherche, pour
  * qu'elle soit insensible à la casse. Les règles vérifient leur cohérence — on
@@ -84,11 +112,76 @@ export async function monProfil(): Promise<Profil | null> {
 export async function definirPseudo(pseudo: string): Promise<void> {
   const uid = idUtilisateur();
   const propre = pseudo.trim();
-  await setDoc(
-    doc(refProfils(), uid),
-    { pseudo: propre, pseudoMin: pseudoNormalise(propre), maj: maintenant() },
-    { merge: true }
-  );
+  const min = pseudoNormalise(propre);
+
+  const ancien = await monProfil().catch(() => null);
+  const ancienMin = ancien ? pseudoNormalise(ancien.pseudo) : null;
+  const change = ancienMin !== min;
+
+  if (change) {
+    const refReservation = doc(refPseudos(), min);
+    const snap = await getDoc(refReservation);
+
+    if (snap.exists()) {
+      // Pris par quelqu'un d'autre : inutile d'essayer.
+      if (snap.data().uid !== uid) throw new PseudoPrisErreur();
+      // Sinon la réservation est déjà à nous — une tentative précédente s'est
+      // interrompue entre les deux écritures. On enchaîne sur le profil.
+    } else {
+      try {
+        await setDoc(refReservation, { uid, quand: maintenant() });
+      } catch {
+        // Réservé entre notre lecture et notre écriture : la règle a tranché.
+        throw new PseudoPrisErreur();
+      }
+    }
+  }
+
+  try {
+    await setDoc(
+      doc(refProfils(), uid),
+      { pseudo: propre, pseudoMin: min, maj: maintenant() },
+      { merge: true }
+    );
+  } catch (e) {
+    // Le profil a échoué après la réservation : on la libère, sinon elle
+    // resterait orpheline et bloquerait ce pseudo pour tout le monde.
+    if (change) await deleteDoc(doc(refPseudos(), min)).catch(() => {});
+    throw e;
+  }
+
+  // L'ancien n'est libéré qu'une fois le nouveau acquis : l'ordre inverse
+  // laisserait sans pseudo en cas d'échec.
+  if (change && ancienMin) await deleteDoc(doc(refPseudos(), ancienMin)).catch(() => {});
+}
+
+/**
+ * Réserve après coup le pseudo d'un profil qui n'en a pas.
+ *
+ * Les profils créés AVANT l'introduction de l'unicité n'ont aucune réservation :
+ * leur pseudo reste donc prenable par n'importe qui, ce qui est exactement ce
+ * qu'on veut empêcher. Appelée à l'ouverture de la Communauté, cette réparation
+ * ferme le trou pour tout compte existant, sans migration manuelle.
+ *
+ * Ne lève jamais : si le pseudo a déjà été pris entre-temps, le profil reste tel
+ * quel — on ne va pas déconnecter quelqu'un pour ça. Il le découvrira en
+ * changeant de pseudo.
+ */
+export async function garantirReservation(): Promise<void> {
+  try {
+    const uid = idUtilisateur();
+    const profil = await monProfil();
+    if (!profil) return;
+
+    const min = pseudoNormalise(profil.pseudo);
+    const snap = await getDoc(doc(refPseudos(), min));
+    // Déjà réservé — par nous, ou par quelqu'un d'autre plus rapide.
+    if (snap.exists()) return;
+
+    await setDoc(doc(refPseudos(), min), { uid, quand: maintenant() });
+  } catch {
+    // Réparation opportuniste : son échec ne doit rien empêcher.
+  }
 }
 
 /** Profils de plusieurs personnes, en une passe. */
@@ -212,6 +305,70 @@ export async function uidDesAmis(): Promise<string[]> {
     .filter((u): u is string => Boolean(u));
 }
 
+// --- Blocages ---------------------------------------------------------------
+
+/**
+ * Bloque quelqu'un : rompt le lien s'il existe, et l'empêche d'en refaire un.
+ *
+ * Le blocage est PRIVÉ (sous-arbre personnel) : la personne bloquée ne l'apprend
+ * pas, elle constate seulement que sa demande n'aboutit pas. C'est voulu — le
+ * notifier reviendrait à provoquer.
+ *
+ * Les règles vérifient le blocage à la création d'une amitié : sans cela, la
+ * personne écartée renverrait une demande dans la seconde.
+ */
+export async function bloquer(uidCible: string): Promise<void> {
+  const moi = idUtilisateur();
+  if (uidCible === moi) throw new Error('On ne peut pas se bloquer soi-même.');
+
+  await setDoc(doc(refBlocages(moi), uidCible), { quand: maintenant() });
+  // Rompre le lien existant : bloquer quelqu'un qui reste dans ses amis n'aurait
+  // aucun sens.
+  await deleteDoc(doc(refAmities(), idPaire(moi, uidCible))).catch(() => {});
+}
+
+/** Débloque quelqu'un. L'amitié n'est pas rétablie : elle est à refaire. */
+export async function debloquer(uidCible: string): Promise<void> {
+  const moi = idUtilisateur();
+  await deleteDoc(doc(refBlocages(moi), uidCible));
+}
+
+/** Les uid que j'ai bloqués. */
+export async function mesBlocages(): Promise<Set<string>> {
+  const moi = idUtilisateur();
+  const snap = await getDocs(refBlocages(moi));
+  return new Set(snap.docs.map((d) => d.id));
+}
+
+// --- Signalements -----------------------------------------------------------
+
+/**
+ * Signale un commentaire ou un profil.
+ *
+ * Dépose dans une boîte aux lettres que l'application ne relit jamais : les
+ * signalements se consultent dans la console Firebase. Rien n'est automatisé —
+ * il vaut mieux une modération manuelle assumée qu'un filtre automatique qui
+ * supprimerait de travers.
+ */
+export async function signaler(
+  type: 'commentaire' | 'profil',
+  cible: string,
+  motif: string
+): Promise<void> {
+  const moi = idUtilisateur();
+  const propre = motif.trim();
+  if (!propre) throw new Error('Explique brièvement le problème.');
+  if (propre.length > 300) throw new Error('300 caractères au maximum.');
+
+  await setDoc(doc(refSignalements()), {
+    auteur: moi,
+    type,
+    cible,
+    motif: propre,
+    quand: maintenant(),
+  });
+}
+
 // --- Fil d'activité ---------------------------------------------------------
 
 /** Ce qu'il faut pour publier une activité. */
@@ -262,59 +419,85 @@ export async function publierActivite(a: NouvelleActivite, amis?: string[]): Pro
   }
 }
 
-/** Le fil : mes activités et celles de mes amis, du plus récent au plus ancien. */
+/**
+ * Le fil : mes activités et celles de mes amis, du plus récent au plus ancien.
+ *
+ * Les personnes bloquées sont écartées ICI, à la lecture. On ne peut pas le
+ * faire côté serveur : `visiblePar` a été écrit avant le blocage, et Firestore
+ * ne sait pas exclure une liste dans une requête. Le filtre local est donc le
+ * seul possible — et il suffit, puisqu'un blocage rompt aussi le lien : la
+ * personne écartée cesse d'être destinataire des activités SUIVANTES.
+ */
 export async function filDActualite(limite = 60): Promise<Activite[]> {
   const moi = idUtilisateur();
-  const snap = await getDocs(
-    query(
-      refActivites(),
-      where('visiblePar', 'array-contains', moi),
-      orderBy('quand', 'desc'),
-      limit(limite)
-    )
-  );
-  return snap.docs.map((d) => {
-    const v = d.data();
-    return {
-      id: d.id,
-      auteur: v.auteur,
-      pseudo: v.pseudo,
-      type: v.type,
-      tmdbId: v.tmdbId,
-      serieTitre: v.serieTitre,
-      cheminAffiche: v.cheminAffiche ?? null,
-      saison: v.saison ?? undefined,
-      numero: v.numero ?? undefined,
-      note: v.note ?? undefined,
-      quand: v.quand,
-    };
-  });
+  const [snap, bloques] = await Promise.all([
+    getDocs(
+      query(
+        refActivites(),
+        where('visiblePar', 'array-contains', moi),
+        orderBy('quand', 'desc'),
+        limit(limite)
+      )
+    ),
+    mesBlocages().catch(() => new Set<string>()),
+  ]);
+
+  return snap.docs
+    .filter((d) => !bloques.has(d.data().auteur))
+    .map((d) => {
+      const v = d.data();
+      return {
+        id: d.id,
+        auteur: v.auteur,
+        pseudo: v.pseudo,
+        type: v.type,
+        tmdbId: v.tmdbId,
+        serieTitre: v.serieTitre,
+        cheminAffiche: v.cheminAffiche ?? null,
+        saison: v.saison ?? undefined,
+        numero: v.numero ?? undefined,
+        note: v.note ?? undefined,
+        quand: v.quand,
+      };
+    });
 }
 
 // --- Commentaires -----------------------------------------------------------
 
-/** Les commentaires d'un épisode, du plus récent au plus ancien. */
+/**
+ * Les commentaires d'un épisode, du plus récent au plus ancien.
+ *
+ * Les commentaires des personnes bloquées sont écartés à la lecture : c'est le
+ * sens même du blocage. Les commentaires étant publics, aucune règle serveur ne
+ * peut le faire à notre place.
+ */
 export async function commentairesEpisode(episodeId: number): Promise<Commentaire[]> {
-  const snap = await getDocs(
-    query(
-      refCommentaires(),
-      where('episodeId', '==', episodeId),
-      orderBy('quand', 'desc'),
-      limit(50)
-    )
-  );
-  return snap.docs.map((d) => {
-    const v = d.data();
-    return {
-      id: d.id,
-      serieId: v.serieId,
-      episodeId: v.episodeId,
-      auteur: v.auteur,
-      pseudo: v.pseudo,
-      texte: v.texte,
-      quand: v.quand,
-    };
-  });
+  const [snap, bloques] = await Promise.all([
+    getDocs(
+      query(
+        refCommentaires(),
+        where('episodeId', '==', episodeId),
+        orderBy('quand', 'desc'),
+        limit(50)
+      )
+    ),
+    mesBlocages().catch(() => new Set<string>()),
+  ]);
+
+  return snap.docs
+    .filter((d) => !bloques.has(d.data().auteur))
+    .map((d) => {
+      const v = d.data();
+      return {
+        id: d.id,
+        serieId: v.serieId,
+        episodeId: v.episodeId,
+        auteur: v.auteur,
+        pseudo: v.pseudo,
+        texte: v.texte,
+        quand: v.quand,
+      };
+    });
 }
 
 /** Publie un commentaire sur un épisode. */

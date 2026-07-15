@@ -8,6 +8,21 @@ rules_version = '2';
 //  que l'application « est censée » faire.
 //
 //  À publier avec `firebase deploy --only firestore:rules`.
+//
+//  ─── CE QUE CES RÈGLES NE FONT PAS ─────────────────────────────────────────
+//  Il n'y a AUCUNE limitation de débit. Ce n'est pas un oubli : une règle ne
+//  peut pas compter les écritures récentes de quelqu'un (pas de requête dans une
+//  règle), et tout compteur stocké côté client serait falsifiable. Un compte
+//  déterminé peut donc publier des commentaires en boucle.
+//
+//  Les vraies réponses, dans l'ordre de coût :
+//    1. Firebase App Check — bloque les clients qui ne sont pas l'application
+//       (scripts, curl). GRATUIT, mais demande une clé reCAPTCHA v3 pour le web
+//       et Play Integrity pour Android. C'est la mesure la plus rentable.
+//    2. Cloud Functions — un vrai compteur côté serveur. Nécessite le plan
+//       Blaze (facturation à l'usage).
+//  Les bornes ci-dessous (taille des textes, une action par document) limitent
+//  les dégâts, elles n'empêchent pas le débit.
 // =============================================================================
 
 service cloud.firestore {
@@ -30,6 +45,23 @@ service cloud.firestore {
       allow read, write: if estMoi(userId);
     }
 
+    // --- Réservation des pseudos --------------------------------------------
+    // Firestore n'a AUCUNE contrainte d'unicité. La parade : le pseudo devient
+    // l'IDENTIFIANT du document — deux personnes ne peuvent pas créer le même
+    // document, l'unicité est donc structurelle plutôt que vérifiée.
+    //
+    // `create` ne s'applique qu'à un document absent : si le pseudo est pris,
+    // l'écriture est un `update`, interdit ci-dessous. Personne ne peut voler le
+    // pseudo d'un autre, même en trichant sur le client.
+    match /pseudos/{pseudoMin} {
+      allow read: if connecte();
+      allow create: if connecte() && request.resource.data.uid == request.auth.uid;
+      // Un pseudo pris ne change jamais de propriétaire.
+      allow update: if false;
+      // On ne libère que le sien, en changeant de pseudo.
+      allow delete: if connecte() && resource.data.uid == request.auth.uid;
+    }
+
     // --- Profils publics ----------------------------------------------------
     // Lisibles par tout utilisateur connecté : c'est ce qui permet de retrouver
     // quelqu'un par son pseudo. Ne contiennent QUE le pseudo — jamais l'e-mail,
@@ -42,8 +74,28 @@ service cloud.firestore {
         // `pseudoMin` sert à la recherche insensible à la casse : il doit être
         // cohérent avec `pseudo`, sinon on pourrait s'afficher sous un nom et
         // être trouvé sous un autre.
-        && request.resource.data.pseudoMin == request.resource.data.pseudo.lower();
+        && request.resource.data.pseudoMin == request.resource.data.pseudo.lower()
+        // Le pseudo doit avoir été RÉSERVÉ, et l'être à notre nom. Sans cette
+        // vérification, la réservation ne serait qu'une politesse : n'importe
+        // quel client modifié écrirait le profil sans passer par elle.
+        && get(/databases/$(database)/documents/pseudos/$(request.resource.data.pseudoMin)).data.uid == userId;
       allow delete: if estMoi(userId);
+    }
+
+    // --- Blocages -----------------------------------------------------------
+    // Vivent sous `users/{uid}/blocages/{autre}` : ils sont donc déjà couverts
+    // par la règle du sous-arbre privé (personne d'autre ne lit qui vous
+    // bloquez). Les règles, elles, peuvent les consulter via `exists()` — c'est
+    // ce qui permet d'empêcher un blocké de revenir.
+
+    /** Vrai si `cible` a bloqué `demandeur`. */
+    function aBloque(cible, demandeur) {
+      return exists(/databases/$(database)/documents/users/$(cible)/blocages/$(demandeur));
+    }
+
+    /** L'autre membre d'une paire, vu depuis moi. */
+    function autreMembre(membres) {
+      return membres[0] == request.auth.uid ? membres[1] : membres[0];
     }
 
     // --- Amitiés ------------------------------------------------------------
@@ -66,7 +118,11 @@ service cloud.firestore {
         && request.resource.data.demandeur == request.auth.uid
         && request.auth.uid in request.resource.data.membres
         && request.resource.data.membres.size() == 2
-        && request.resource.data.statut == 'attente';
+        && request.resource.data.statut == 'attente'
+        // Bloquer doit vouloir dire quelque chose : sans cette vérification, la
+        // personne écartée renverrait une demande dans la seconde. C'est ici que
+        // le blocage cesse d'être décoratif.
+        && !aBloque(autreMembre(request.resource.data.membres), request.auth.uid);
 
       // Accepter : réservé au DESTINATAIRE. Le demandeur ne peut pas valider sa
       // propre demande, et les membres ne changent jamais.
@@ -119,6 +175,23 @@ service cloud.firestore {
         && request.resource.data.auteur == resource.data.auteur
         && request.resource.data.episodeId == resource.data.episodeId;
       allow delete: if connecte() && resource.data.auteur == request.auth.uid;
+    }
+
+    // --- Signalements -------------------------------------------------------
+    // Une boîte aux lettres à sens unique : on y dépose, personne n'y lit depuis
+    // l'application. Les signalements se consultent dans la console Firebase.
+    //
+    // Volontairement ILLISIBLE côté client, y compris pour son auteur : pouvoir
+    // lister les signalements dirait à un harceleur qui l'a dénoncé.
+    match /signalements/{signalementId} {
+      allow read: if false;
+      allow create: if connecte()
+        && request.resource.data.auteur == request.auth.uid
+        && request.resource.data.cible is string
+        && request.resource.data.type in ['commentaire', 'profil']
+        && texteValide(request.resource.data.motif, 300);
+      // Un signalement ne se retire pas : sinon on dénonce puis on efface.
+      allow update, delete: if false;
     }
   }
 }
