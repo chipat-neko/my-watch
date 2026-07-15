@@ -37,6 +37,9 @@ import { Progression } from '@/components/Progression';
 import { GrilleSquelettes, LignesSquelettes, Squelette } from '@/components/Squelette';
 import { chargerBibliotheque } from '@/services/bibliotheque';
 import { avanceesDesSeries, AvanceeSerie } from '@/services/progression';
+import { avanceeApresMarquage } from '@/services/progressionCalcul';
+import { PositionEpisode } from '@/services/prochainAVoir';
+import { marquerPositionVue } from '@/services/suivi';
 import { prochainsEpisodes } from '@/services/agenda';
 import { ProchainEpisode } from '@/lib/tmdb';
 import { urlAffiche, urlFond } from '@/theme/constantes';
@@ -121,6 +124,37 @@ export default function EcranAccueil() {
 
   function ouvrir(tmdbId: number, type: string) {
     router.push({ pathname: '/titre/[id]', params: { id: String(tmdbId), type } });
+  }
+
+  /**
+   * Marque vu le prochain épisode d'une série, depuis l'accueil.
+   *
+   * L'avancement est mis à jour de façon OPTIMISTE : la barre progresse et la
+   * ligne annonce l'épisode suivant immédiatement, sans attendre les deux
+   * allers-retours (TMDb pour résoudre l'identifiant, Firestore pour écrire).
+   * En cas d'échec, on recharge la vérité depuis le serveur.
+   */
+  async function marquerProchainVu(entree: EntreeBibliotheque, position: PositionEpisode) {
+    const avant = avancees;
+    const courante = avant.get(entree.tmdbId);
+    if (!courante) return;
+
+    const optimiste = new Map(avant);
+    optimiste.set(entree.tmdbId, avanceeApresMarquage(courante, position));
+    setAvancees(optimiste);
+
+    try {
+      const ok = await marquerPositionVue(entree.tmdbId, position);
+      if (!ok) throw new Error('Épisode introuvable sur TMDb');
+    } catch {
+      setAvancees(avant);
+      return;
+    }
+    // Recale sur la vérité du serveur (le statut a pu changer, la série passer
+    // « à jour »…), sans bloquer le retour visuel qui a déjà eu lieu.
+    avanceesDesSeries(entrees)
+      .then(setAvancees)
+      .catch(() => {});
   }
 
   const enCours = entrees.filter((e) => e.statut === 'en_cours');
@@ -259,9 +293,11 @@ export default function EcranAccueil() {
                     entree={e}
                     avancee={avancees.get(e.tmdbId)}
                     accent={accent}
+                    encre={encre}
                     densite={d}
                     padding={padding}
                     onPress={() => ouvrir(e.tmdbId, e.type)}
+                    onMarquerVu={(position) => marquerProchainVu(e, position)}
                   />
                 </Animated.View>
               ))}
@@ -469,24 +505,47 @@ function RailPosters({
   );
 }
 
-/** Une ligne « Reprendre » : affiche + titre + avancement. */
+/**
+ * Une ligne « Reprendre » : affiche, titre, ÉPISODE À REGARDER, avancement, et
+ * un bouton pour le marquer vu sans quitter l'accueil.
+ *
+ * C'est le geste qui définit une application de suivi : la ligne affichait
+ * « Série · en cours », ce qui n'apprend rien. Elle dit maintenant « S2 E5 » et
+ * permet d'avancer d'un seul appui.
+ */
 function LigneReprendre({
   entree,
   avancee,
   accent,
+  encre,
   densite,
   padding,
   onPress,
+  onMarquerVu,
 }: {
   entree: EntreeBibliotheque;
   avancee?: AvanceeSerie;
   accent: string;
+  encre: string;
   densite: 'mobile' | 'desktop';
   padding: number;
   onPress: () => void;
+  onMarquerVu: (position: PositionEpisode) => Promise<void>;
 }) {
   const t = typo(densite);
   const uri = urlAffiche(entree.cheminAffiche, 'w185');
+  const [occupe, setOccupe] = useState(false);
+  const prochain = avancee?.prochain ?? null;
+
+  async function marquer() {
+    if (!prochain || occupe) return;
+    setOccupe(true);
+    try {
+      await onMarquerVu(prochain);
+    } finally {
+      setOccupe(false);
+    }
+  }
 
   return (
     <Pressable
@@ -517,6 +576,15 @@ function LigneReprendre({
         <Text style={[t.h3, { color: couleurs.texte }]} numberOfLines={1}>
           {entree.titre}
         </Text>
+
+        {prochain ? (
+          <Text style={[t.overline, { color: accent, marginTop: 3 }]}>
+            À REGARDER · S{prochain.saison} E{prochain.numero}
+          </Text>
+        ) : avancee ? (
+          <Text style={[t.overline, { color: couleurs.texteFaible, marginTop: 3 }]}>À JOUR</Text>
+        ) : null}
+
         {avancee ? (
           <View style={{ marginTop: espacements.s }}>
             <Progression vus={avancee.vus} total={avancee.total} accent={accent} libelle />
@@ -527,7 +595,33 @@ function LigneReprendre({
           </Text>
         )}
       </View>
-      <Ionicons name="chevron-forward" size={20} color={couleurs.texteFaible} />
+
+      {prochain ? (
+        <Pressable
+          onPress={marquer}
+          disabled={occupe}
+          accessibilityRole="button"
+          accessibilityLabel={`Marquer S${prochain.saison} E${prochain.numero} comme vu`}
+          // Étend la zone tactile au-delà du visuel : 36px de visuel, 44 de cible.
+          hitSlop={8}
+          style={({ hovered, pressed }: EtatPressable) => [
+            styles.btnVu,
+            { borderColor: accent },
+            hovered && { backgroundColor: accent },
+            pressed && { transform: [{ scale: 0.94 }] },
+          ]}
+        >
+          {({ hovered }: EtatPressable) => (
+            <Ionicons
+              name={occupe ? 'hourglass-outline' : 'checkmark'}
+              size={19}
+              color={hovered ? encre : accent}
+            />
+          )}
+        </Pressable>
+      ) : (
+        <Ionicons name="chevron-forward" size={20} color={couleurs.texteFaible} />
+      )}
     </Pressable>
   );
 }
@@ -641,6 +735,15 @@ const styles = StyleSheet.create({
     backgroundColor: couleurs.surface2,
   },
   ligneInfos: { flex: 1 },
+  btnVu: {
+    width: 36,
+    height: 36,
+    borderRadius: rayons.rond,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
   vide: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: espacements.xl },
   videRond: {
     width: 96,

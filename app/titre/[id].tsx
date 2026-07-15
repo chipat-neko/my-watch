@@ -32,6 +32,7 @@ import {
   demarquerEpisode,
   noterEpisode,
 } from '@/services/bibliotheque';
+import { enParallele } from '@/services/async';
 import { CocheVu } from '@/components/CocheVu';
 import { Etoiles } from '@/components/Etoiles';
 import { Progression } from '@/components/Progression';
@@ -356,7 +357,10 @@ function BlocEpisodes({
   const [notes, setNotes] = useState<Map<number, number | null>>(new Map());
   const [totalVus, setTotalVus] = useState(0);
   const [chargement, setChargement] = useState(true);
+  const [lotEnCours, setLotEnCours] = useState(false);
   const staggerArme = useRef(true);
+
+  const restantsDansLaSaison = episodes.filter((e) => !vus.has(e.id)).length;
 
   // Épisodes de la saison courante + épisodes déjà vus.
   const rafraichir = useCallback(async () => {
@@ -398,6 +402,43 @@ function BlocEpisodes({
       await marquerEpisodeVu(serieId, ep.id, ep.saison, ep.numero).catch(() => rafraichir());
       // Cocher un épisode fait entrer la série dans le suivi « en cours ».
       onEpisodeCoche();
+    }
+  }
+
+  /**
+   * Marque vus tous les épisodes de la saison jusqu'à `limite` inclus (ou toute
+   * la saison si `limite` est absent).
+   *
+   * C'est l'action qui manquait le plus : sans elle, rattraper une saison
+   * signifie cocher vingt cases à la main, une par une, chacune avec son
+   * aller-retour réseau.
+   */
+  async function marquerJusqua(limite?: number) {
+    const manquants = episodes.filter(
+      (e) => !vus.has(e.id) && (limite === undefined || e.numero <= limite)
+    );
+    if (manquants.length === 0 || lotEnCours) return;
+
+    setLotEnCours(true);
+    // Optimiste : les coches tombent toutes ensemble, la barre saute d'un coup.
+    setVus((prev) => {
+      const copie = new Set(prev);
+      for (const e of manquants) copie.add(e.id);
+      return copie;
+    });
+    setTotalVus((n) => n + manquants.length);
+
+    try {
+      // 5 en parallèle : assez pour que ce soit rapide, assez peu pour ne pas
+      // saturer Firestore d'écritures simultanées.
+      await enParallele(manquants, 5, async (e) => {
+        await marquerEpisodeVu(serieId, e.id, e.saison, e.numero);
+      });
+      onEpisodeCoche();
+    } catch {
+      await rafraichir();
+    } finally {
+      setLotEnCours(false);
     }
   }
 
@@ -459,6 +500,31 @@ function BlocEpisodes({
         })}
       </ScrollView>
 
+      {/* Marquage par lot : sans lui, rattraper une saison veut dire cocher
+          vingt cases une par une. */}
+      {!chargement && restantsDansLaSaison > 0 ? (
+        <Pressable
+          onPress={() => marquerJusqua()}
+          disabled={lotEnCours}
+          accessibilityRole="button"
+          accessibilityLabel={`Marquer les ${restantsDansLaSaison} épisodes restants de la saison ${saison} comme vus`}
+          style={({ hovered, pressed }: EtatPressable) => [
+            styles.lot,
+            hovered && { backgroundColor: `${accent}1F`, borderColor: accent },
+            pressed && { transform: [{ scale: 0.99 }] },
+          ]}
+        >
+          <Ionicons
+            name={lotEnCours ? 'hourglass-outline' : 'checkmark-done'}
+            size={17}
+            color={accent}
+          />
+          <Text style={[t.label, { color: accent }]}>
+            {lotEnCours ? 'Marquage…' : `Marquer la saison vue (${restantsDansLaSaison} ép.)`}
+          </Text>
+        </Pressable>
+      ) : null}
+
       {chargement ? (
         <LignesSquelettes nombre={5} />
       ) : (
@@ -479,10 +545,20 @@ function BlocEpisodes({
                   hovered && { backgroundColor: couleurs.surface },
                 ]}
                 onPress={() => basculer(ep)}
+                // Appui long : marque tout jusqu'à cet épisode. Le geste est
+                // caché, d'où le bouton « Marquer la saison vue » au-dessus qui,
+                // lui, est visible : une action critique ne doit jamais dépendre
+                // d'un geste qu'on ne peut pas deviner.
+                onLongPress={() => marquerJusqua(ep.numero)}
+                delayLongPress={400}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: vu }}
                 accessibilityLabel={`Épisode ${ep.numero}${ep.nom ? ', ' + ep.nom : ''}`}
-                accessibilityHint={vu ? 'Marquer comme non vu' : 'Marquer comme vu'}
+                accessibilityHint={
+                  vu
+                    ? 'Marquer comme non vu'
+                    : 'Marquer comme vu. Appui long : marquer tous les épisodes jusqu’ici.'
+                }
               >
                 <CocheVu vu={vu} accent={accent} />
                 <View style={styles.episodeInfos}>
@@ -583,6 +659,19 @@ const styles = StyleSheet.create({
   },
   // ~75 caractères par ligne : la mesure optimale de lecture.
   synopsis: { color: couleurs.texteCorps, maxWidth: conteneurs.lecture },
+  lot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: espacements.s,
+    height: 44,
+    borderRadius: rayons.rond,
+    borderWidth: 1,
+    borderColor: couleurs.bordure2,
+    borderStyle: 'dashed',
+    marginBottom: espacements.sm,
+    cursor: 'pointer',
+  },
   episodesEnTete: { gap: espacements.s },
   progressionBloc: { maxWidth: 280, marginBottom: espacements.m },
   saisons: { flexDirection: 'row', gap: espacements.s, paddingBottom: espacements.m },

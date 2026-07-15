@@ -1,31 +1,34 @@
 // =============================================================================
 //  Service "Progression"
 //  ---------------------------------------------------------------------------
-//  Calcule l'avancement des séries en cours : épisodes vus / total diffusé.
+//  Où en est chaque série : épisodes vus / total, et surtout le PROCHAIN
+//  ÉPISODE À REGARDER.
 //
-//  Sans ce chiffre, l'application est un annuaire d'affiches ; avec lui, elle
-//  devient un outil de suivi. C'est la seule donnée qui dit à l'utilisateur
-//  « où tu en es ».
+//  Sans ces deux informations, l'application est un annuaire d'affiches ; avec
+//  elles, elle répond à la seule question qui compte quand on ouvre une app de
+//  suivi : « je regarde quoi, maintenant ? ».
 //
-//  Le calcul lui-même vit dans `progressionCalcul.ts` (pur, testé) ; ici, on ne
-//  fait que rassembler les données.
+//  Le calcul vit dans `progressionCalcul.ts` et `prochainAVoir.ts` (purs,
+//  testés) ; ici, on ne fait que rassembler les données.
 // =============================================================================
 
-import { comptesEpisodesVus } from '@/services/bibliotheque';
+import { episodesVusParSerie } from '@/services/bibliotheque';
 import { detailsTitre } from '@/lib/tmdb';
 import { enParallele } from '@/services/async';
-import { AvanceeSerie, fusionnerAvancees } from '@/services/progressionCalcul';
-import { EntreeBibliotheque } from '@/types';
+import { AvanceeSerie, fusionnerAvancees, InfosSerie } from '@/services/progressionCalcul';
+import { PositionEpisode } from '@/services/prochainAVoir';
+import { EntreeBibliotheque, EpisodeVu } from '@/types';
 
 export type { AvanceeSerie };
 
 /**
- * Progression des séries fournies. Une seule lecture Firestore pour tous les
+ * Avancement des séries fournies. Une seule lecture Firestore pour tous les
  * épisodes vus, puis un appel TMDb par série (4 en parallèle au plus, pour ne
- * pas saturer l'API).
+ * pas saturer l'API). Le prochain épisode est déduit de ce même appel : il ne
+ * coûte donc rien de plus.
  *
- * Ne lève jamais : une progression manquante doit dégrader l'affichage, pas
- * casser l'écran d'accueil.
+ * Ne lève jamais : un avancement manquant doit dégrader l'affichage, pas casser
+ * l'écran d'accueil.
  */
 export async function avanceesDesSeries(
   entrees: EntreeBibliotheque[]
@@ -33,17 +36,29 @@ export async function avanceesDesSeries(
   const series = entrees.filter((e) => e.type === 'serie');
   if (series.length === 0) return new Map();
 
-  const comptes = await comptesEpisodesVus().catch(() => new Map<number, number>());
-  const totaux = new Map<number, number>();
+  const vusBruts = await episodesVusParSerie().catch(() => new Map<number, EpisodeVu[]>());
+  const vusParSerie = new Map<number, PositionEpisode[]>();
+  for (const [serieId, liste] of vusBruts) {
+    vusParSerie.set(
+      serieId,
+      liste.map((v: EpisodeVu) => ({ saison: v.saison, numero: v.numero }))
+    );
+  }
 
+  const infos = new Map<number, InfosSerie>();
   await enParallele(series, 4, async (e) => {
     try {
       const details = await detailsTitre(e.tmdbId, 'serie');
-      if (details.nombreEpisodes) totaux.set(e.tmdbId, details.nombreEpisodes);
+      if (details.nombreEpisodes && details.saisons) {
+        infos.set(e.tmdbId, {
+          nombreEpisodes: details.nombreEpisodes,
+          saisons: details.saisons,
+        });
+      }
     } catch {
-      // Série introuvable ou réseau indisponible : pas de barre pour celle-ci.
+      // Série introuvable ou réseau indisponible : pas d'avancement pour celle-ci.
     }
   });
 
-  return fusionnerAvancees(comptes, totaux);
+  return fusionnerAvancees(vusParSerie, infos);
 }

@@ -67,6 +67,22 @@ export interface Titre {
    * détail TMDb). Sert de dénominateur à la barre de progression.
    */
   nombreEpisodes?: number;
+  /**
+   * Sommaire des saisons (séries uniquement, renseigné par le détail TMDb).
+   * Les épisodes spéciaux (saison 0) sont exclus : ils ne comptent pas dans la
+   * progression normale d'une série.
+   *
+   * Permet de calculer le « prochain épisode à regarder » SANS aucun appel
+   * réseau supplémentaire : on connaît le nombre d'épisodes de chaque saison,
+   * et on sait lesquels sont vus.
+   */
+  saisons?: SommaireSaison[];
+}
+
+/** Une saison, telle que résumée par le détail TMDb d'une série. */
+export interface SommaireSaison {
+  numero: number;
+  nbEpisodes: number;
 }
 
 /** Un épisode d'une série. */

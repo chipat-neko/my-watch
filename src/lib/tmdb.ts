@@ -57,6 +57,13 @@ function versTitre(brut: any, typeForce?: TypeMedia): Titre {
     // l'écran détail de connaître le nombre de saisons sans second appel réseau.
     nombreSaisons: brut.number_of_seasons ?? undefined,
     nombreEpisodes: brut.number_of_episodes ?? undefined,
+    // La saison 0 regroupe les épisodes spéciaux : elle ne fait pas partie de la
+    // progression normale d'une série, on l'écarte.
+    saisons: Array.isArray(brut.seasons)
+      ? brut.seasons
+          .filter((s: any) => s.season_number > 0 && s.episode_count > 0)
+          .map((s: any) => ({ numero: s.season_number, nbEpisodes: s.episode_count }))
+      : undefined,
   };
 }
 
