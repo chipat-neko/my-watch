@@ -87,14 +87,26 @@ export function appliquerNotes(titres: TitreTrakt[], notes: Map<string, number>)
 }
 
 /**
- * Vrai si une clé ressemble à un identifiant d'application Trakt.
+ * Vrai si une clé PEUT être un identifiant d'application Trakt.
  *
- * Trakt délivre des empreintes hexadécimales de 64 caractères. Vérifier la
- * FORME, et non la simple présence, est indispensable : le modèle `.env.example`
- * contient `colle_ici_ton_client_id_trakt`, qui n'est pas vide. Un simple
- * `length > 0` déclarait donc l'application configurée, masquait le message
- * d'aide, et lançait une connexion vouée à un 403 — sans rien expliquer.
+ * Pourquoi cette vérification existe : le modèle `.env.example` contient
+ * `colle_ici_ton_client_id_trakt`, qui n'est pas vide. Un simple `length > 0`
+ * déclarait l'application configurée, masquait le message d'aide, et lançait une
+ * connexion vouée à l'échec — sans rien expliquer.
+ *
+ * Pourquoi elle ne valide PAS un format précis : Trakt a déjà changé le sien.
+ * Les clés étaient des empreintes hexadécimales de 64 caractères ; celles
+ * délivrées aujourd'hui font 43 caractères en base64url. Une vérification
+ * stricte a donc rejeté de VRAIES clés — le contraire du service rendu. On se
+ * borne à écarter ce qui ne peut pas être un jeton, et on laisse l'API trancher :
+ * elle seule sait.
  */
 export function cleTraktValide(cle: string): boolean {
-  return /^[a-f0-9]{64}$/i.test(cle.trim());
+  const c = cle.trim();
+  // Trop court pour un jeton d'application, quel que soit le format.
+  if (c.length < 32) return false;
+  // Les valeurs d'exemple livrées avec le projet.
+  if (/colle_ici|ton_client|remplir|placeholder|xxxx/i.test(c)) return false;
+  // Un jeton ne contient ni espace, ni accent, ni ponctuation.
+  return /^[A-Za-z0-9_-]+$/.test(c);
 }

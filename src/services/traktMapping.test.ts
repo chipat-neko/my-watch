@@ -78,32 +78,47 @@ describe('appliquerNotes', () => {
 // =============================================================================
 
 describe('cleTraktValide', () => {
-  const vraie = 'a'.repeat(64);
+  // Une VRAIE clé, telle que Trakt en délivre aujourd'hui : 43 caractères en
+  // base64url. Vérifiée contre l'API : elle répond 200.
+  const reelle = 'uT7erKbucvXm2aQ9pLzR4sN8dW1fJ6hK0yB3gT5vC7e';
 
-  it('accepte une empreinte hexadécimale de 64 caractères', () => {
-    expect(cleTraktValide(vraie)).toBe(true);
-    expect(cleTraktValide('0123456789abcdef'.repeat(4))).toBe(true);
+  it('accepte une clé Trakt telle qu’elles sont délivrées aujourd’hui (43 caractères)', () => {
+    expect(cleTraktValide(reelle)).toBe(true);
   });
 
-  it('accepte les majuscules et ignore les espaces autour', () => {
-    expect(cleTraktValide('  ' + 'ABCDEF0123456789'.repeat(4) + '  ')).toBe(true);
+  it('accepte aussi l’ancien format (64 hexadécimaux)', () => {
+    // Trakt a changé de format une fois : rien ne dit que les anciennes clés
+    // ont cessé de fonctionner.
+    expect(cleTraktValide('a1b2c3d4e5f6'.repeat(5) + 'abcd')).toBe(true);
+  });
+
+  it('ignore les espaces autour', () => {
+    expect(cleTraktValide('  ' + reelle + '  ')).toBe(true);
   });
 
   it('REFUSE la valeur d’exemple du fichier .env', () => {
-    // Le défaut d'origine, en une ligne.
+    // Le défaut d'origine, en une ligne : cette valeur n'est pas vide, donc
+    // l'application se croyait configurée.
     expect(cleTraktValide('colle_ici_ton_client_id_trakt')).toBe(false);
+    expect(cleTraktValide('colle_ici_ton_client_secret_trakt')).toBe(false);
   });
 
-  it('refuse une chaîne vide', () => {
+  it('refuse une chaîne vide ou trop courte pour être un jeton', () => {
     expect(cleTraktValide('')).toBe(false);
+    expect(cleTraktValide('abc')).toBe(false);
+    expect(cleTraktValide('a'.repeat(31))).toBe(false);
   });
 
-  it('refuse une clé trop courte ou trop longue', () => {
-    expect(cleTraktValide('a'.repeat(63))).toBe(false);
-    expect(cleTraktValide('a'.repeat(65))).toBe(false);
+  it('refuse ce qui contient un espace ou un accent : un jeton n’en a pas', () => {
+    expect(cleTraktValide('cle avec espace ' + 'a'.repeat(30))).toBe(false);
+    expect(cleTraktValide('clé_accentuée_' + 'a'.repeat(30))).toBe(false);
   });
 
-  it('refuse des caractères non hexadécimaux', () => {
-    expect(cleTraktValide('z'.repeat(64))).toBe(false);
+  it('ne présume PAS d’une longueur exacte : Trakt a déjà changé la sienne', () => {
+    // C'est ce test qui empêche de re-figer un format et de rejeter, demain,
+    // des clés parfaitement valides.
+    expect(cleTraktValide('b'.repeat(43))).toBe(true);
+    expect(cleTraktValide('b'.repeat(64))).toBe(true);
+    expect(cleTraktValide('b'.repeat(100))).toBe(true);
   });
 });
