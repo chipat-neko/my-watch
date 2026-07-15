@@ -57,6 +57,8 @@ export default function EcranTrakt() {
   const [copie, setCopie] = useState(false);
   /** Vrai pendant qu'on demande un code : evite deux demandes concurrentes. */
   const [demande, setDemande] = useState(false);
+  /** Secondes restantes avant expiration du code. */
+  const [restant, setRestant] = useState(0);
 
   useEffect(() => {
     estConnecteTrakt().then((c) => {
@@ -64,6 +66,22 @@ export default function EcranTrakt() {
       setChargement(false);
     });
   }, []);
+
+  // Décompte visible : un code ne vaut que 10 minutes, et se connecter à Trakt
+  // (login, mot de passe) peut les consommer. Sans compteur, on ne comprend pas
+  // pourquoi Trakt répond « code invalide » — on croit à une panne.
+  useEffect(() => {
+    if (!code) {
+      setRestant(0);
+      return;
+    }
+    const fin = Date.now() + code.expiresIn * 1000;
+    setRestant(code.expiresIn);
+    const minuteur = setInterval(() => {
+      setRestant(Math.max(0, Math.round((fin - Date.now()) / 1000)));
+    }, 1000);
+    return () => clearInterval(minuteur);
+  }, [code]);
 
   // Sonde le device flow tant qu'un code d'appairage est actif.
   useEffect(() => {
@@ -81,6 +99,8 @@ export default function EcranTrakt() {
         }
         let etat: EtatSondage;
         try {
+          // Une coupure réseau ne doit PAS faire disparaître le code de
+          // l'écran : on patiente et on resonde.
           etat = await sonderAppairage(code.deviceCode);
         } catch {
           etat = 'en_attente';
@@ -322,7 +342,17 @@ export default function EcranTrakt() {
 
             <View style={styles.attente}>
               <ActivityIndicator size="small" color={couleurs.texteFaible} />
-              <Text style={[styles.aide, { flex: 1 }]}>En attente de ton autorisation…</Text>
+              <Text style={[styles.aide, { flex: 1 }]}>
+                En attente de ton autorisation…{' '}
+                {restant > 0 ? (
+                  // Le compteur passe en rouge sur la dernière minute : c'est le
+                  // moment où il vaut mieux repartir d'un code neuf que de finir
+                  // sa saisie.
+                  <Text style={{ color: restant < 60 ? couleurs.accentRose : couleurs.texteDoux }}>
+                    Ce code expire dans {Math.floor(restant / 60)} min {restant % 60} s.
+                  </Text>
+                ) : null}
+              </Text>
             </View>
 
             {/* Sans ce bouton, un code déjà saisi ailleurs bloquait tout : il
