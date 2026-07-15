@@ -106,6 +106,11 @@ export interface Episode {
   dateDiffusion: string | null;
   /** Durée en minutes, ou null. */
   duree: number | null;
+  /**
+   * Image de l'épisode (« still ») au format 16:9, ou null. C'est ce que TV Time
+   * met en avant : une liste d'épisodes sans image n'est qu'un sommaire.
+   */
+  cheminImage: string | null;
 }
 
 /**

@@ -46,3 +46,27 @@ export function prochainAVoir(saisons: SommaireSaison[], vus: Set<string>): Posi
 export function cle(saison: number, numero: number): string {
   return `${saison}:${numero}`;
 }
+
+/**
+ * Numéros des saisons entièrement vues.
+ *
+ * Sert au badge « saison terminée » du sélecteur : sans lui, rien ne distingue
+ * une saison rattrapée d'une saison jamais commencée, et il faut ouvrir chacune
+ * pour savoir où l'on en est.
+ */
+export function saisonsTerminees(saisons: SommaireSaison[], vus: Set<string>): Set<number> {
+  const finies = new Set<number>();
+  for (const saison of saisons) {
+    // Une saison sans épisode n'est pas « terminée » : il n'y avait rien à voir.
+    if (saison.nbEpisodes <= 0) continue;
+    let complete = true;
+    for (let n = 1; n <= saison.nbEpisodes; n++) {
+      if (!vus.has(cle(saison.numero, n))) {
+        complete = false;
+        break;
+      }
+    }
+    if (complete) finies.add(saison.numero);
+  }
+  return finies;
+}

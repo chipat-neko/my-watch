@@ -12,7 +12,7 @@
 //  touché « suit » l'utilisateur au lieu de disparaître derrière un spinner.
 // =============================================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -42,6 +42,7 @@ import {
   noterEpisode,
 } from '@/services/bibliotheque';
 import { enParallele } from '@/services/async';
+import { cle, saisonsTerminees } from '@/services/prochainAVoir';
 import { CartePoster } from '@/components/CartePoster';
 import { Casting } from '@/components/Casting';
 import { CocheVu } from '@/components/CocheVu';
@@ -49,8 +50,16 @@ import { Etoiles } from '@/components/Etoiles';
 import { Progression } from '@/components/Progression';
 import { LignesSquelettes, Squelette } from '@/components/Squelette';
 import { useVariante } from '@/hooks/useVariante';
-import { Titre, Episode, EtatPressable, StatutSuivi, TypeMedia, EntreeBibliotheque } from '@/types';
-import { urlAffiche, urlFond, nomsGenres } from '@/theme/constantes';
+import {
+  Titre,
+  Episode,
+  EtatPressable,
+  SommaireSaison,
+  StatutSuivi,
+  TypeMedia,
+  EntreeBibliotheque,
+} from '@/types';
+import { urlAffiche, urlFond, urlStill, nomsGenres } from '@/theme/constantes';
 import {
   conteneurs,
   couleurs,
@@ -367,6 +376,7 @@ export default function EcranDetail() {
                   serieId={id}
                   nbSaisons={titre.nombreSaisons ?? 0}
                   nbEpisodes={titre.nombreEpisodes ?? 0}
+                  saisons={titre.saisons ?? []}
                   accent={accent}
                   encre={encre}
                   densite={d}
@@ -439,6 +449,7 @@ function BlocEpisodes({
   serieId,
   nbSaisons,
   nbEpisodes,
+  saisons,
   accent,
   encre,
   densite,
@@ -449,6 +460,8 @@ function BlocEpisodes({
   nbSaisons: number;
   /** Nombre total d'épisodes diffusés, pour la barre de progression. */
   nbEpisodes: number;
+  /** Structure des saisons, pour repérer celles qui sont terminées. */
+  saisons: SommaireSaison[];
   accent: string;
   encre: string;
   densite: 'mobile' | 'desktop';
@@ -458,6 +471,7 @@ function BlocEpisodes({
   const [saison, setSaison] = useState(1);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [vus, setVus] = useState<Set<number>>(new Set());
+  const [positionsVues, setPositionsVues] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<Map<number, number | null>>(new Map());
   const [totalVus, setTotalVus] = useState(0);
   const [chargement, setChargement] = useState(true);
@@ -465,6 +479,10 @@ function BlocEpisodes({
   const staggerArme = useRef(true);
 
   const restantsDansLaSaison = episodes.filter((e) => !vus.has(e.id)).length;
+  // Calculé à partir des positions (saison + numéro) et non des identifiants :
+  // on connaît les épisodes vus de TOUTES les saisons, mais les identifiants de
+  // la seule saison affichée.
+  const finies = useMemo(() => saisonsTerminees(saisons, positionsVues), [saisons, positionsVues]);
 
   // Épisodes de la saison courante + épisodes déjà vus.
   const rafraichir = useCallback(async () => {
@@ -476,6 +494,7 @@ function BlocEpisodes({
       ]);
       setEpisodes(eps);
       setVus(new Set(vusDb.map((v) => v.episodeId)));
+      setPositionsVues(new Set(vusDb.map((v) => cle(v.saison, v.numero))));
       setNotes(new Map(vusDb.map((v): [number, number | null] => [v.episodeId, v.note])));
       setTotalVus(vusDb.length);
     } finally {
@@ -494,14 +513,21 @@ function BlocEpisodes({
     // Mise à jour optimiste de l'UI (immédiate), puis appel réseau : le retour
     // visuel ne doit JAMAIS attendre la latence de Firestore.
     const copie = new Set(vus);
+    // Les positions suivent les identifiants : sans elles, le badge « saison
+    // terminée » n'apparaîtrait qu'au prochain chargement.
+    const positions = new Set(positionsVues);
     if (dejaVu) {
       copie.delete(ep.id);
+      positions.delete(cle(ep.saison, ep.numero));
       setVus(copie);
+      setPositionsVues(positions);
       setTotalVus((n) => Math.max(0, n - 1));
       await demarquerEpisode(ep.id).catch(() => rafraichir());
     } else {
       copie.add(ep.id);
+      positions.add(cle(ep.saison, ep.numero));
       setVus(copie);
+      setPositionsVues(positions);
       setTotalVus((n) => n + 1);
       await marquerEpisodeVu(serieId, ep.id, ep.saison, ep.numero).catch(() => rafraichir());
       // Cocher un épisode fait entrer la série dans le suivi « en cours ».
@@ -528,6 +554,11 @@ function BlocEpisodes({
     setVus((prev) => {
       const copie = new Set(prev);
       for (const e of manquants) copie.add(e.id);
+      return copie;
+    });
+    setPositionsVues((prev) => {
+      const copie = new Set(prev);
+      for (const e of manquants) copie.add(cle(e.saison, e.numero));
       return copie;
     });
     setTotalVus((n) => n + manquants.length);
@@ -583,19 +614,26 @@ function BlocEpisodes({
       >
         {Array.from({ length: nbSaisons }, (_, i) => i + 1).map((s) => {
           const actif = s === saison;
+          const terminee = finies.has(s);
           return (
             <Pressable
               key={s}
               onPress={() => setSaison(s)}
               accessibilityRole="button"
               accessibilityState={{ selected: actif }}
-              accessibilityLabel={`Saison ${s}`}
+              accessibilityLabel={`Saison ${s}${terminee ? ', terminée' : ''}`}
               style={({ hovered }: EtatPressable) => [
                 styles.saisonBtn,
                 actif && { backgroundColor: accent, borderColor: accent },
+                !actif && terminee && { borderColor: `${accent}59` },
                 hovered && !actif && { backgroundColor: couleurs.surface3 },
               ]}
             >
+              {/* Sans ce badge, rien ne distingue une saison rattrapée d'une
+                  saison jamais commencée : il faut ouvrir chacune pour savoir. */}
+              {terminee ? (
+                <Ionicons name="checkmark-circle" size={13} color={actif ? encre : accent} />
+              ) : null}
               <Text style={[t.label, { color: actif ? encre : couleurs.texteDoux }]}>
                 Saison {s}
               </Text>
@@ -665,6 +703,25 @@ function BlocEpisodes({
                 }
               >
                 <CocheVu vu={vu} accent={accent} />
+
+                {/* L'image de l'épisode : une liste d'épisodes sans image n'est
+                    qu'un sommaire. Assombrie une fois vue, pour que l'œil aille
+                    droit à ce qui reste. */}
+                {ep.cheminImage ? (
+                  <Image
+                    source={{ uri: urlStill(ep.cheminImage)! }}
+                    style={[styles.still, vu && styles.stillVu]}
+                    contentFit="cover"
+                    transition={200}
+                    cachePolicy="memory-disk"
+                    accessible={false}
+                  />
+                ) : (
+                  <View style={[styles.still, styles.stillAbsent]}>
+                    <Ionicons name="image-outline" size={18} color={couleurs.texteFaible} />
+                  </View>
+                )}
+
                 <View style={styles.episodeInfos}>
                   <Text
                     style={[t.h3, { color: vu ? couleurs.texteDoux : couleurs.texte }]}
@@ -678,6 +735,17 @@ function BlocEpisodes({
                       {ep.duree ? ` · ${ep.duree} min` : ''}
                     </Text>
                   ) : null}
+
+                  {/* Le synopsis était récupéré de TMDb depuis le début et
+                      n'était affiché nulle part. Deux lignes : de quoi décider
+                      si on regarde, sans transformer la liste en pavé — et sans
+                      divulgâcher un épisode non vu. */}
+                  {ep.synopsis ? (
+                    <Text style={[t.caption, styles.episodeSynopsis]} numberOfLines={2}>
+                      {ep.synopsis}
+                    </Text>
+                  ) : null}
+
                   <View style={styles.episodeNote}>
                     <Etoiles
                       note={notes.get(ep.id) ?? null}
@@ -796,6 +864,11 @@ const styles = StyleSheet.create({
   progressionBloc: { maxWidth: 280, marginBottom: espacements.m },
   saisons: { flexDirection: 'row', gap: espacements.s, paddingBottom: espacements.m },
   saisonBtn: {
+    // `row` indispensable : la puce contient une icône ET un texte. Sans lui, la
+    // colonne par défaut empile le badge au-dessus du libellé, qui déborde.
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.s,
     paddingHorizontal: espacements.m,
     height: 38,
     justifyContent: 'center',
@@ -816,7 +889,22 @@ const styles = StyleSheet.create({
     borderBottomColor: couleurs.bordure,
     cursor: 'pointer',
   },
+  // 16:9, le format des « stills » TMDb.
+  still: {
+    width: 112,
+    height: 63,
+    borderRadius: rayons.s,
+    backgroundColor: couleurs.surface2,
+    borderWidth: 1,
+    borderColor: couleurs.lisere,
+  },
+  // Vu : l'image s'efface pour que l'œil aille à ce qui reste. On atténue
+  // l'IMAGE, pas la ligne entière — délaver toute la carte casserait le contraste
+  // du texte.
+  stillVu: { opacity: 0.45 },
+  stillAbsent: { alignItems: 'center', justifyContent: 'center' },
   episodeInfos: { flex: 1 },
+  episodeSynopsis: { color: couleurs.texteFaible, marginTop: espacements.xs },
   episodeNote: { marginTop: espacements.xs },
   retirer: {
     flexDirection: 'row',

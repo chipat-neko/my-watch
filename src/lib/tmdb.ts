@@ -166,6 +166,7 @@ export async function episodesSaison(serieId: number, saison: number): Promise<E
     synopsis: e.overview ?? '',
     dateDiffusion: e.air_date || null,
     duree: e.runtime ?? null,
+    cheminImage: e.still_path ?? null,
   }));
 }
 

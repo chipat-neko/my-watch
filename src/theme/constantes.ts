@@ -26,6 +26,15 @@ export function urlFond(chemin: string | null, taille: 'w780' | 'w1280' = 'w1280
 }
 
 /**
+ * Construit l'URL de l'image d'un épisode (« still », 16:9).
+ * w300 par défaut : une vignette de 112px en DPR 2 consomme 224px de bitmap ;
+ * servir du w780 pour cela gaspillerait dix fois le poids utile.
+ */
+export function urlStill(chemin: string | null, taille: 'w300' | 'w780' = 'w300'): string | null {
+  return chemin ? `${IMG_BASE}${taille}${chemin}` : null;
+}
+
+/**
  * Correspondance des identifiants de genres TMDb vers un libellé français.
  * (Films et séries confondus — les identifiants ne se chevauchent pas.)
  */
