@@ -26,7 +26,14 @@ export function CartePoster({ titre, largeur = 120, onPress }: Props) {
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${titre.titre}, ${titre.type === 'film' ? 'film' : 'série'}`}
-      style={[styles.conteneur, { width: largeur }]}
+      // Feedback d'état : léger retrait au press, mise en avant au survol (web).
+      // Sans état pressé, une interface paraît figée / "non finie".
+      style={({ pressed, hovered }: any) => [
+        styles.conteneur,
+        { width: largeur },
+        hovered && styles.survole,
+        pressed && styles.presse,
+      ]}
     >
       {/* Affiche, ou un cadre gris si l'image est absente. */}
       {uri ? (
@@ -62,6 +69,10 @@ const styles = StyleSheet.create({
   // Pas de marge ici : l'espacement est géré par le parent (gap), afin que la
   // carte s'intègre aussi bien dans une grille que dans un rail horizontal.
   conteneur: {},
+  /** Survol (web) : la carte se soulève légèrement. */
+  survole: { transform: [{ translateY: -3 }] },
+  /** Press : retrait subtil (règle scale-feedback : 0.95–1.05). */
+  presse: { opacity: 0.8, transform: [{ scale: 0.97 }] },
   affiche: {
     borderRadius: rayons.m,
     backgroundColor: couleurs.surface2,
