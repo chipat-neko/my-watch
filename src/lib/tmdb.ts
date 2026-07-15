@@ -207,6 +207,74 @@ export async function prochainEpisode(serieId: number): Promise<ProchainEpisode 
   };
 }
 
+/** Un membre du casting principal. */
+export interface Acteur {
+  id: number;
+  nom: string;
+  /** Nom du personnage joué. */
+  personnage: string;
+  cheminPhoto: string | null;
+}
+
+/**
+ * Têtes d'affiche d'un titre (10 au plus).
+ *
+ * TMDb classe le casting par `order` : au-delà d'une dizaine, on tombe dans les
+ * silhouettes et les rôles d'un épisode. Les afficher tous donnerait un rail
+ * interminable de visages inconnus.
+ */
+export async function casting(id: number, type: TypeMedia): Promise<Acteur[]> {
+  const chemin = type === 'film' ? `/movie/${id}/credits` : `/tv/${id}/aggregate_credits`;
+  const data = await appelTmdb<{ cast: any[] }>(chemin);
+  return (data.cast ?? []).slice(0, 10).map((a) => ({
+    id: a.id,
+    nom: a.name,
+    // Les séries passent par `aggregate_credits`, qui regroupe les rôles par
+    // acteur : le personnage est alors dans `roles[]` et non dans `character`.
+    personnage: a.character ?? a.roles?.[0]?.character ?? '',
+    cheminPhoto: a.profile_path ?? null,
+  }));
+}
+
+/**
+ * Clé YouTube de la bande-annonce, ou null.
+ *
+ * On demande le français puis on retombe sur l'anglais : TMDb n'a pas toujours
+ * de vidéo francophone, et « pas de bande-annonce » serait faux alors qu'il en
+ * existe une en VO.
+ */
+export async function bandeAnnonce(id: number, type: TypeMedia): Promise<string | null> {
+  const chemin = type === 'film' ? `/movie/${id}/videos` : `/tv/${id}/videos`;
+  const fr = await appelTmdb<{ results: any[] }>(chemin).catch(() => ({ results: [] }));
+  const en = await appelTmdb<{ results: any[] }>(chemin, { language: 'en-US' }).catch(() => ({
+    results: [],
+  }));
+
+  const toutes = [...(fr.results ?? []), ...(en.results ?? [])].filter(
+    (v) => v.site === 'YouTube' && v.key
+  );
+  // Une vraie bande-annonce d'abord ; à défaut un teaser, qui vaut mieux que rien.
+  const choix =
+    toutes.find((v) => v.type === 'Trailer' && v.official) ??
+    toutes.find((v) => v.type === 'Trailer') ??
+    toutes.find((v) => v.type === 'Teaser') ??
+    null;
+  return choix?.key ?? null;
+}
+
+/**
+ * Titres recommandés à partir de celui-ci.
+ *
+ * `/recommendations` plutôt que `/similar` : TMDb bâtit le premier sur le
+ * comportement réel des utilisateurs, là où le second ne compare que les genres
+ * et les mots-clés — et propose donc n'importe quel autre policier.
+ */
+export async function recommandations(id: number, type: TypeMedia): Promise<Titre[]> {
+  const chemin = type === 'film' ? `/movie/${id}/recommendations` : `/tv/${id}/recommendations`;
+  const data = await appelTmdb<{ results: any[] }>(chemin);
+  return (data.results ?? []).slice(0, 20).map((r) => versTitre(r, type));
+}
+
 /**
  * Plateformes de streaming où le titre est disponible en France
  * (fonctionnalité "Où regarder"). TMDb agrège ces données via JustWatch.

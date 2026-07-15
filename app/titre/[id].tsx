@@ -20,7 +20,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { detailsTitre, ouRegarder, episodesSaison } from '@/lib/tmdb';
+import * as Linking from 'expo-linking';
+import {
+  Acteur,
+  bandeAnnonce,
+  casting,
+  detailsTitre,
+  episodesSaison,
+  ouRegarder,
+  recommandations,
+} from '@/lib/tmdb';
 import {
   entreePour,
   ajouterTitre,
@@ -33,6 +42,8 @@ import {
   noterEpisode,
 } from '@/services/bibliotheque';
 import { enParallele } from '@/services/async';
+import { CartePoster } from '@/components/CartePoster';
+import { Casting } from '@/components/Casting';
 import { CocheVu } from '@/components/CocheVu';
 import { Etoiles } from '@/components/Etoiles';
 import { Progression } from '@/components/Progression';
@@ -78,10 +89,14 @@ export default function EcranDetail() {
   const [titre, setTitre] = useState<Titre | null>(null);
   const [plateformes, setPlateformes] = useState<string[]>([]);
   const [entree, setEntree] = useState<EntreeBibliotheque | null>(null);
+  const [acteurs, setActeurs] = useState<Acteur[]>([]);
+  const [trailer, setTrailer] = useState<string | null>(null);
+  const [aussi, setAussi] = useState<Titre[]>([]);
   const [chargement, setChargement] = useState(true);
 
   // Chargement initial : détails + plateformes + entrée éventuelle en biblio.
   useEffect(() => {
+    let actif = true;
     (async () => {
       try {
         const [t, p, e] = await Promise.all([
@@ -89,14 +104,38 @@ export default function EcranDetail() {
           ouRegarder(id, type).catch(() => []),
           entreePour(id, type).catch(() => null),
         ]);
+        if (!actif) return;
         setTitre(t);
         setPlateformes(p);
         setEntree(e);
       } finally {
-        setChargement(false);
+        if (actif) setChargement(false);
       }
     })();
+
+    // Casting, bande-annonce et recommandations arrivent APRÈS l'essentiel :
+    // trois appels de plus ne doivent pas retarder l'affichage du titre et des
+    // boutons de statut. Chacun échoue dans son coin sans casser la page.
+    casting(id, type)
+      .then((r) => actif && setActeurs(r))
+      .catch(() => {});
+    bandeAnnonce(id, type)
+      .then((r) => actif && setTrailer(r))
+      .catch(() => {});
+    recommandations(id, type)
+      .then((r) => actif && setAussi(r))
+      .catch(() => {});
+
+    return () => {
+      actif = false;
+    };
   }, [id, type]);
+
+  /** Ouvre la bande-annonce sur YouTube (nouvel onglet sur web, app native sinon). */
+  function ouvrirTrailer() {
+    if (!trailer) return;
+    Linking.openURL(`https://www.youtube.com/watch?v=${trailer}`).catch(() => {});
+  }
 
   /**
    * Applique un statut : ajoute le titre s'il n'est pas suivi, sinon met à
@@ -253,6 +292,27 @@ export default function EcranDetail() {
                 })}
               </View>
 
+              {/* Bande-annonce : ouvre YouTube plutôt que d'embarquer un
+                  lecteur — cela demanderait une WebView, une dépendance de plus
+                  et un rendu incertain sur web. Le bouton n'apparaît que si une
+                  vidéo existe vraiment. */}
+              {trailer ? (
+                <Pressable
+                  onPress={ouvrirTrailer}
+                  accessibilityRole="link"
+                  accessibilityLabel="Voir la bande-annonce sur YouTube"
+                  style={({ hovered, pressed }: EtatPressable) => [
+                    styles.trailer,
+                    hovered && { backgroundColor: couleurs.surface3, borderColor: accent },
+                    pressed && { transform: [{ scale: 0.99 }] },
+                  ]}
+                >
+                  <Ionicons name="play-circle" size={20} color={accent} />
+                  <Text style={[t.label, { color: couleurs.texte }]}>Bande-annonce</Text>
+                  <Ionicons name="open-outline" size={14} color={couleurs.texteFaible} />
+                </Pressable>
+              ) : null}
+
               {entree ? (
                 <View style={styles.noteBloc}>
                   <Text style={[t.overline, { color: couleurs.texteFaible }]}>MA NOTE</Text>
@@ -293,6 +353,14 @@ export default function EcranDetail() {
                 </View>
               ) : null}
 
+              {/* Casting : une fiche sans visage est une fiche technique. */}
+              {acteurs.length > 0 ? (
+                <View style={styles.section}>
+                  <Text style={[t.h2, styles.sectionTitre]}>Têtes d’affiche</Text>
+                  <Casting acteurs={acteurs} densite={d} padding={padding} />
+                </View>
+              ) : null}
+
               {/* Épisodes (séries uniquement) */}
               {type === 'serie' ? (
                 <BlocEpisodes
@@ -304,6 +372,42 @@ export default function EcranDetail() {
                   densite={d}
                   onEpisodeCoche={garantirEnCours}
                 />
+              ) : null}
+
+              {/* Recommandations : c'est ainsi qu'on trouve la suivante sans
+                  repasser par la recherche. `/recommendations` et non `/similar` :
+                  le premier s'appuie sur le comportement réel des utilisateurs,
+                  le second ne compare que les genres et propose donc n'importe
+                  quel autre policier. */}
+              {aussi.length > 0 ? (
+                <View style={styles.section}>
+                  <Text style={[t.h2, styles.sectionTitre]}>À voir aussi</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.railAussi}
+                  >
+                    {aussi.map((r) => (
+                      <CartePoster
+                        key={`${r.type}-${r.id}`}
+                        titre={r}
+                        largeur={d === 'desktop' ? 150 : 112}
+                        accent={accent}
+                        onPress={() =>
+                          router.push({
+                            pathname: '/titre/[id]',
+                            params: {
+                              id: String(r.id),
+                              type: r.type,
+                              nom: r.titre,
+                              affiche: r.cheminAffiche ?? '',
+                            },
+                          })
+                        }
+                      />
+                    ))}
+                  </ScrollView>
+                </View>
               ) : null}
 
               {entree ? (
@@ -637,6 +741,22 @@ const styles = StyleSheet.create({
     borderColor: couleurs.bordure2,
     cursor: 'pointer',
   },
+  trailer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.s,
+    alignSelf: 'flex-start',
+    height: 44,
+    paddingHorizontal: espacements.m,
+    borderRadius: rayons.rond,
+    backgroundColor: couleurs.surface2,
+    borderWidth: 1,
+    borderColor: couleurs.bordure2,
+    borderTopColor: couleurs.lisere,
+    marginTop: espacements.sm,
+    cursor: 'pointer',
+  },
+  railAussi: { flexDirection: 'row', gap: espacements.m, paddingVertical: espacements.xs },
   noteBloc: {
     flexDirection: 'row',
     alignItems: 'center',
