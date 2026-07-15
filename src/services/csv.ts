@@ -72,31 +72,94 @@ export function extraireTitre(brut: string): { nom: string; type: TypeMedia | nu
   return { nom: brut.trim(), type: null };
 }
 
+/** Trouve l'index d'une colonne dont l'intitulé contient l'un des mots donnés. */
+function trouverColonne(entete: string[], mots: string[]): number {
+  return entete.findIndex((h) => mots.some((m) => h.includes(m)));
+}
+
 /**
- * Transforme le contenu texte d'un CSV en lignes d'import normalisées.
- * Détecte automatiquement s'il s'agit d'un export Netflix ou TV Time
- * en regardant les intitulés de colonnes de l'en-tête.
+ * Ce qu'un fichier importé raconte réellement.
+ *
+ * C'est la distinction qui manquait : un historique Netflix liste ce qui a été
+ * REGARDÉ, une watchlist liste ce qu'on VEUT voir, et un export d'épisodes dit
+ * OÙ L'ON EN EST. Les confondre revenait à tout marquer « terminé ».
  */
-export function analyserCsv(contenu: string): LigneImport[] {
+export type NatureFichier =
+  | 'historique' // Ce qui a été vu (Netflix).
+  | 'episodes' // Épisodes vus, avec saison et numéro (TV Time).
+  | 'watchlist' // Ce qu'on veut voir.
+  | 'suivi' // Séries suivies, en cours.
+  | 'inconnu'; // On ne peut pas trancher : c'est à l'utilisateur de dire.
+
+/** Résultat de l'analyse d'un fichier. */
+export interface AnalyseFichier {
+  nature: NatureFichier;
+  lignes: LigneImport[];
+}
+
+/**
+ * Devine la nature d'un fichier d'après son nom et ses colonnes.
+ *
+ * Les exports RGPD de TV Time contiennent plusieurs fichiers dont les noms
+ * portent le sens : `seen_episode`, `watchlist`, `follows`… On s'appuie d'abord
+ * sur le nom, puis sur les colonnes. En cas de doute : `inconnu`, et l'écran
+ * demandera — mieux vaut une question qu'une donnée fausse.
+ */
+export function devinerNature(nomFichier: string, entete: string[]): NatureFichier {
+  const nom = nomFichier.toLowerCase();
+
+  if (/watchlist|to.?watch|a.?voir/.test(nom)) return 'watchlist';
+  if (/seen.?episode|episode.?seen|watched.?episode|tracking/.test(nom)) return 'episodes';
+  if (/follow|suivi|tracking.?show/.test(nom)) return 'suivi';
+  if (/viewing|history|historique|activity/.test(nom)) return 'historique';
+
+  // À défaut du nom : des colonnes de saison ET d'épisode ne peuvent décrire
+  // qu'un suivi épisode par épisode.
+  const aSaison = trouverColonne(entete, ['season', 'saison']) >= 0;
+  const aEpisode = trouverColonne(entete, ['episode_number', 'episode number', 'numero']) >= 0;
+  if (aSaison && aEpisode) return 'episodes';
+
+  return 'inconnu';
+}
+
+/**
+ * Transforme le contenu texte d'un CSV en lignes d'import normalisées, et dit ce
+ * que le fichier raconte.
+ *
+ * @param contenu     Le texte du CSV.
+ * @param nomFichier  Son nom : chez TV Time, c'est lui qui porte le sens.
+ */
+export function analyserFichier(contenu: string, nomFichier = ''): AnalyseFichier {
   const lignes = contenu.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lignes.length < 2) return [];
+  if (lignes.length < 2) return { nature: 'inconnu', lignes: [] };
 
   const entete = analyserLigneCsv(lignes[0]).map((h) => h.toLowerCase());
 
-  // Repère les colonnes "titre" et "date", quels que soient leurs noms exacts.
-  const idxTitre = entete.findIndex(
-    (h) => h.includes('title') || h.includes('titre') || h.includes('name') || h.includes('nom')
-  );
-  const idxDate = entete.findIndex((h) => h.includes('date'));
+  // La colonne du titre : on cherche d'abord les intitulés les plus précis, car
+  // « name » seul pourrait désigner le nom de l'ÉPISODE et non celui de la série.
+  let idxTitre = trouverColonne(entete, ['series_name', 'show_name', 'series name', 'show name']);
+  if (idxTitre < 0) idxTitre = trouverColonne(entete, ['movie_name', 'movie name', 'film']);
+  if (idxTitre < 0) idxTitre = trouverColonne(entete, ['title', 'titre']);
+  if (idxTitre < 0) idxTitre = trouverColonne(entete, ['name', 'nom']);
 
-  // Heuristique de détection de la source.
+  const idxDate = trouverColonne(entete, ['watched', 'created', 'updated', 'date']);
+  const idxSaison = trouverColonne(entete, ['season_number', 'season number', 'season', 'saison']);
+  const idxEpisode = trouverColonne(entete, ['episode_number', 'episode number', 'numero']);
+
+  const nature = devinerNature(nomFichier, entete);
+
+  // Netflix : le nom du fichier quand on l'a, sinon sa signature de colonnes —
+  // exactement « Title » et « Date », et jamais de saison, celle-ci étant
+  // enfouie dans le titre. Un export TV Time, lui, nomme ses colonnes autrement.
+  const signatureNetflix =
+    entete.some((h) => h.includes('title')) && entete.some((h) => h.includes('date'));
   const source: LigneImport['source'] =
-    entete.some((h) => h.includes('title')) && entete.some((h) => h.includes('date'))
+    /viewing|netflix/i.test(nomFichier) || (signatureNetflix && idxSaison < 0)
       ? 'import_netflix'
       : 'import_tvtime';
 
-  const resultat: LigneImport[] = [];
-  const dejaVus = new Set<string>(); // évite les doublons (séries répétées par épisode)
+  // Regroupe par titre : un export d'épisodes répète la série à chaque ligne.
+  const parTitre = new Map<string, LigneImport>();
 
   for (let i = 1; i < lignes.length; i++) {
     const champs = analyserLigneCsv(lignes[i]);
@@ -105,17 +168,43 @@ export function analyserCsv(contenu: string): LigneImport[] {
 
     // Déduit le nom (et le type si évident) sans casser les titres à « : ».
     const { nom, type } = extraireTitre(brut);
-    if (!nom || dejaVus.has(nom.toLowerCase())) continue;
-    dejaVus.add(nom.toLowerCase());
+    if (!nom) continue;
 
-    resultat.push({
-      titreBrut: nom,
-      type,
-      date: idxDate >= 0 ? (champs[idxDate] ?? null) : null,
-      source,
-    });
+    const cle = nom.toLowerCase();
+    const date = idxDate >= 0 ? (champs[idxDate] ?? null) : null;
+
+    let ligne = parTitre.get(cle);
+    if (!ligne) {
+      ligne = {
+        titreBrut: nom,
+        // Des colonnes de saison et d'épisode ne laissent aucun doute sur le type.
+        type: idxSaison >= 0 && idxEpisode >= 0 ? 'serie' : type,
+        date,
+        source,
+      };
+      parTitre.set(cle, ligne);
+    }
+
+    // Conserve chaque épisode : c'est ce qui permettra de reconstituer
+    // l'avancement réel plutôt que de tout marquer « terminé ».
+    if (idxSaison >= 0 && idxEpisode >= 0) {
+      const saison = Number(champs[idxSaison]);
+      const numero = Number(champs[idxEpisode]);
+      if (Number.isFinite(saison) && Number.isFinite(numero) && numero > 0) {
+        (ligne.episodes ??= []).push({ saison, numero, date });
+      }
+    }
   }
-  return resultat;
+
+  return { nature, lignes: [...parTitre.values()] };
+}
+
+/**
+ * Compatibilité : ne renvoie que les lignes.
+ * @deprecated Préférer `analyserFichier`, qui dit aussi ce que le fichier raconte.
+ */
+export function analyserCsv(contenu: string): LigneImport[] {
+  return analyserFichier(contenu).lignes;
 }
 
 /**

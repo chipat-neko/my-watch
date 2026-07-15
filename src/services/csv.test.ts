@@ -6,7 +6,14 @@
 //  et normalisation des dates. Aucune dépendance réseau ou React Native.
 // =============================================================================
 
-import { analyserLigneCsv, extraireTitre, analyserCsv, parserDateImport } from './csv';
+import {
+  analyserLigneCsv,
+  extraireTitre,
+  analyserCsv,
+  analyserFichier,
+  devinerNature,
+  parserDateImport,
+} from './csv';
 
 describe('analyserLigneCsv', () => {
   it('découpe les champs simples séparés par des virgules', () => {
@@ -115,5 +122,113 @@ describe('parserDateImport', () => {
     ['pas une date', null],
   ])('parserDateImport(%p) === %p', (entree, attendu) => {
     expect(parserDateImport(entree)).toBe(attendu);
+  });
+});
+
+// =============================================================================
+//  Nature du fichier et épisodes
+//  ---------------------------------------------------------------------------
+//  C'est ici que vivait le bug le plus grave de l'import : TOUT arrivait avec le
+//  statut « terminé », y compris une watchlist ou une série à peine commencée.
+//  Ces tests verrouillent la distinction.
+// =============================================================================
+
+describe('devinerNature', () => {
+  it('reconnaît une watchlist à son nom', () => {
+    expect(devinerNature('watchlist.csv', ['series_name'])).toBe('watchlist');
+  });
+
+  it('reconnaît un fichier d’épisodes vus à son nom', () => {
+    expect(devinerNature('seen_episode.csv', ['series_name'])).toBe('episodes');
+  });
+
+  it('reconnaît des séries suivies à leur nom', () => {
+    expect(devinerNature('follows.csv', ['series_name'])).toBe('suivi');
+  });
+
+  it('reconnaît un historique Netflix à son nom', () => {
+    expect(devinerNature('NetflixViewingHistory.csv', ['title', 'date'])).toBe('historique');
+  });
+
+  it('déduit « épisodes » des colonnes quand le nom ne dit rien', () => {
+    // Des colonnes de saison ET d'épisode ne peuvent décrire qu'un suivi
+    // épisode par épisode.
+    expect(devinerNature('export.csv', ['series_name', 'season_number', 'episode_number'])).toBe(
+      'episodes'
+    );
+  });
+
+  it('renvoie « inconnu » plutôt que de deviner', () => {
+    // Le cœur de la correction : mieux vaut demander que supposer « terminé ».
+    expect(devinerNature('donnees.csv', ['nom'])).toBe('inconnu');
+  });
+});
+
+describe('analyserFichier — épisodes TV Time', () => {
+  const csv = [
+    'series_name,season_number,episode_number,watched_at',
+    'Breaking Bad,1,1,2024-01-05',
+    'Breaking Bad,1,2,2024-01-06',
+    'Breaking Bad,2,1,2024-02-01',
+    'Game of Thrones,1,1,2024-03-01',
+  ].join('\n');
+
+  it('regroupe les épisodes par série au lieu de répéter le titre', () => {
+    const { lignes } = analyserFichier(csv, 'seen_episode.csv');
+    expect(lignes).toHaveLength(2);
+    expect(lignes[0].titreBrut).toBe('Breaking Bad');
+  });
+
+  it('conserve chaque épisode avec sa saison et son numéro', () => {
+    // C'est ce qui permet de reconstituer l'avancement RÉEL plutôt que de
+    // déclarer la série terminée.
+    const { lignes } = analyserFichier(csv, 'seen_episode.csv');
+    expect(lignes[0].episodes).toEqual([
+      { saison: 1, numero: 1, date: '2024-01-05' },
+      { saison: 1, numero: 2, date: '2024-01-06' },
+      { saison: 2, numero: 1, date: '2024-02-01' },
+    ]);
+  });
+
+  it('force le type « serie » : des colonnes de saison ne laissent aucun doute', () => {
+    const { lignes } = analyserFichier(csv, 'seen_episode.csv');
+    expect(lignes[0].type).toBe('serie');
+  });
+
+  it('annonce la nature « episodes »', () => {
+    expect(analyserFichier(csv, 'seen_episode.csv').nature).toBe('episodes');
+  });
+
+  it('préfère « series_name » à « name » pour le titre', () => {
+    // « name » pourrait désigner le nom de l'ÉPISODE : le prendre nommerait la
+    // série d'après son premier épisode.
+    const avecNom = [
+      'series_name,name,season_number,episode_number',
+      'Breaking Bad,Chute libre,1,1',
+    ].join('\n');
+    expect(analyserFichier(avecNom, 'seen_episode.csv').lignes[0].titreBrut).toBe('Breaking Bad');
+  });
+
+  it('ignore un épisode dont le numéro n’est pas un nombre', () => {
+    const bancal = ['series_name,season_number,episode_number', 'Breaking Bad,1,inconnu'].join(
+      '\n'
+    );
+    expect(analyserFichier(bancal, 'seen_episode.csv').lignes[0].episodes).toBeUndefined();
+  });
+});
+
+describe('analyserFichier — watchlist', () => {
+  it('n’attache aucun épisode à une watchlist', () => {
+    const csv = ['series_name,created_at', 'Severance,2024-05-01'].join('\n');
+    const { nature, lignes } = analyserFichier(csv, 'watchlist.csv');
+    expect(nature).toBe('watchlist');
+    expect(lignes[0].episodes).toBeUndefined();
+  });
+});
+
+describe('analyserFichier — Netflix reste reconnu', () => {
+  it('conserve la source Netflix sans nom de fichier', () => {
+    const csv = ['Title,Date', '"Mission: Impossible",15/06/2024'].join('\n');
+    expect(analyserFichier(csv).lignes[0].source).toBe('import_netflix');
   });
 });

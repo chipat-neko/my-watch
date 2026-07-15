@@ -184,4 +184,12 @@ export interface LigneImport {
   date: string | null;
   /** Origine du fichier. */
   source: Exclude<SourceEntree, 'manuel'>;
+  /**
+   * Épisodes identifiés dans le fichier pour ce titre (export TV Time).
+   *
+   * Un export d'épisodes vus ne dit PAS qu'une série est terminée : il dit
+   * lesquels ont été vus. Les conserver permet de reconstituer l'avancement
+   * réel au lieu de tout marquer « terminé ».
+   */
+  episodes?: { saison: number; numero: number; date: string | null }[];
 }
