@@ -25,13 +25,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/useAuth';
-import { statistiques, Statistiques } from '@/services/bibliotheque';
+import { chargerBibliotheque, statistiques, Statistiques } from '@/services/bibliotheque';
+import { tempsDeVisionnage } from '@/services/progression';
+import { equivalence, formaterDuree } from '@/services/tempsCalcul';
 import { prochainsEpisodes } from '@/services/agenda';
 import {
   activerNotifications,
   desactiverNotifications,
   notificationsActivees,
 } from '@/services/notifications';
+import { Squelette } from '@/components/Squelette';
 import { useVariante, ACCENTS, LIBELLES_VARIANTE, Variante } from '@/hooks/useVariante';
 import { EtatPressable } from '@/types';
 import {
@@ -52,6 +55,7 @@ export default function EcranProfil() {
   const router = useRouter();
   const { width: fenetre } = useWindowDimensions();
   const [stats, setStats] = useState<Statistiques | null>(null);
+  const [minutes, setMinutes] = useState<number | null>(null);
   const [notifs, setNotifs] = useState(false);
   const [notifsOccupe, setNotifsOccupe] = useState(false);
 
@@ -67,6 +71,14 @@ export default function EcranProfil() {
       statistiques()
         .then((s) => actif && setStats(s))
         .catch(() => {});
+
+      // Le temps de visionnage demande un appel TMDb par titre : il arrive
+      // APRÈS le reste, sans jamais bloquer l'écran.
+      chargerBibliotheque()
+        .then(tempsDeVisionnage)
+        .then((m) => actif && setMinutes(m))
+        .catch(() => {});
+
       return () => {
         actif = false;
       };
@@ -154,6 +166,36 @@ export default function EcranProfil() {
             icone="checkmark-done"
             densite={d}
           />
+        </View>
+
+        {/* Temps passé à regarder : le chiffre le plus partagé d'une app de
+            suivi. Annoncé comme une ESTIMATION, parce que c'en est une — TMDb
+            ne donne qu'une durée type par série, pas la durée réelle de chaque
+            épisode vu. */}
+        <View style={[styles.temps, { borderTopColor: couleurs.lisere }]}>
+          <View style={styles.tempsTexte}>
+            <Text style={[t.overline, { color: couleurs.texteFaible }]}>
+              TEMPS PASSÉ À REGARDER
+            </Text>
+            {minutes === null ? (
+              <Squelette largeur={140} hauteur={40} rayon={rayons.s} style={{ marginTop: 6 }} />
+            ) : (
+              <>
+                <View style={styles.tempsChiffre}>
+                  <Text style={[styles.tempsValeur, { color: accent }]}>
+                    {formaterDuree(minutes).valeur}
+                  </Text>
+                  <Text style={[t.h2, { color: couleurs.texteDoux }]}>
+                    {formaterDuree(minutes).unite}
+                  </Text>
+                </View>
+                <Text style={[t.caption, { color: couleurs.texteFaible }]}>
+                  {equivalence(minutes)} Estimation d’après la durée moyenne des épisodes.
+                </Text>
+              </>
+            )}
+          </View>
+          <Ionicons name="hourglass-outline" size={40} color={`${accent}59`} />
         </View>
 
         {/* Apparence : direction visuelle (classic / grid / social) */}
@@ -370,6 +412,25 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_800ExtraBold',
     letterSpacing: -1,
     // Chiffres à chasse fixe : sinon les compteurs sautent à la mise à jour.
+    fontVariant: ['tabular-nums'],
+  },
+  temps: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: espacements.m,
+    backgroundColor: couleurs.surface,
+    borderWidth: 1,
+    borderColor: couleurs.bordure,
+    borderRadius: rayons.l,
+    padding: espacements.ml,
+    marginTop: espacements.sm,
+  },
+  tempsTexte: { flex: 1, gap: 2 },
+  tempsChiffre: { flexDirection: 'row', alignItems: 'baseline', gap: espacements.s },
+  tempsValeur: {
+    fontFamily: 'Manrope_800ExtraBold',
+    fontSize: 40,
+    letterSpacing: -1.4,
     fontVariant: ['tabular-nums'],
   },
   sectionLabel: {

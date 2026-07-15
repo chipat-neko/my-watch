@@ -77,6 +77,11 @@ export interface Titre {
    * et on sait lesquels sont vus.
    */
   saisons?: SommaireSaison[];
+  /**
+   * Durée en minutes (renseignée par le détail TMDb) : durée du film, ou durée
+   * type d'un épisode pour une série. Sert au calcul du temps de visionnage.
+   */
+  duree?: number;
 }
 
 /** Une saison, telle que résumée par le détail TMDb d'une série. */

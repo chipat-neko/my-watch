@@ -17,9 +17,49 @@ import { detailsTitre } from '@/lib/tmdb';
 import { enParallele } from '@/services/async';
 import { AvanceeSerie, fusionnerAvancees, InfosSerie } from '@/services/progressionCalcul';
 import { PositionEpisode } from '@/services/prochainAVoir';
+import { DUREE_EPISODE_DEFAUT, DureeTitre, minutesTotales } from '@/services/tempsCalcul';
 import { EntreeBibliotheque, EpisodeVu } from '@/types';
 
 export type { AvanceeSerie };
+
+/**
+ * Temps de visionnage estimé, en minutes.
+ *
+ * ESTIMATION assumée : TMDb ne donne pas la durée réelle de chaque épisode vu,
+ * seulement une durée type par série. L'interface doit donc afficher
+ * « environ » — un chiffre à la minute près serait un mensonge.
+ *
+ * Coûteux (un appel TMDb par titre suivi) : à charger en arrière-plan, jamais
+ * en bloquant un écran.
+ */
+export async function tempsDeVisionnage(entrees: EntreeBibliotheque[]): Promise<number> {
+  if (entrees.length === 0) return 0;
+
+  const vusBruts = await episodesVusParSerie().catch(() => new Map<number, EpisodeVu[]>());
+  const durees: DureeTitre[] = [];
+
+  await enParallele(entrees, 4, async (e) => {
+    try {
+      const details = await detailsTitre(e.tmdbId, e.type);
+      if (e.type === 'film') {
+        // Un film ne compte que s'il a été vu : l'avoir en watchlist ne fait
+        // pas passer le temps.
+        durees.push({
+          duree: details.duree ?? 0,
+          unitesVues: e.statut === 'termine' ? 1 : 0,
+        });
+      } else {
+        const vus = vusBruts.get(e.tmdbId)?.length ?? 0;
+        durees.push({ duree: details.duree ?? DUREE_EPISODE_DEFAUT, unitesVues: vus });
+      }
+    } catch {
+      // Titre introuvable ou réseau indisponible : on l'omet du total plutôt
+      // que d'inventer une durée.
+    }
+  });
+
+  return minutesTotales(durees);
+}
 
 /**
  * Avancement des séries fournies. Une seule lecture Firestore pour tous les

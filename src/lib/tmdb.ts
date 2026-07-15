@@ -57,6 +57,14 @@ function versTitre(brut: any, typeForce?: TypeMedia): Titre {
     // l'écran détail de connaître le nombre de saisons sans second appel réseau.
     nombreSaisons: brut.number_of_seasons ?? undefined,
     nombreEpisodes: brut.number_of_episodes ?? undefined,
+    // Durée en minutes : `runtime` pour un film, durée type d'un épisode pour
+    // une série. TMDb renvoie parfois plusieurs durées d'épisode (formats
+    // courts et longs) : on prend la première, qui est la plus représentative.
+    duree: estFilm
+      ? (brut.runtime ?? undefined)
+      : Array.isArray(brut.episode_run_time)
+        ? brut.episode_run_time[0]
+        : undefined,
     // La saison 0 regroupe les épisodes spéciaux : elle ne fait pas partie de la
     // progression normale d'une série, on l'écarte.
     saisons: Array.isArray(brut.seasons)

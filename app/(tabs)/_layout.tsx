@@ -1,8 +1,13 @@
 // =============================================================================
 //  Layout des onglets (navigation adaptative)
 //  ---------------------------------------------------------------------------
-//  Cinq destinations (handoff « TV Time ») : Accueil, Découvrir, À venir,
-//  Communauté, Profil.
+//  Cinq destinations : Accueil, Découvrir, À venir, Ma liste, Profil.
+//
+//  Écart assumé au handoff : « Ma liste » (la bibliothèque) prend la place de
+//  « Communauté ». Le volet social demande un back-end que My Watch n'a pas, et
+//  garder 20 % de la navigation sur un écran « bientôt disponible » alors que la
+//  bibliothèque n'existait nulle part était indéfendable. La communauté
+//  reviendra quand elle aura quelque chose à montrer.
 //
 //  Navigation ADAPTATIVE (règle Material Adaptive / handoff web) :
 //    - petit écran (< 1024px) -> barre d'onglets en bas (mobile)
@@ -128,10 +133,10 @@ export default function LayoutOnglets() {
         }}
       />
       <Tabs.Screen
-        name="communaute"
+        name="bibliotheque"
         options={{
-          title: 'Communauté',
-          tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color} size={size} />,
+          title: 'Ma liste',
+          tabBarIcon: ({ color, size }) => <Ionicons name="library" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
